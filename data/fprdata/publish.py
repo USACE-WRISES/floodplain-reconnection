@@ -65,8 +65,10 @@ def publish(site: Path, repo_id: str = REPO, workers: int | None = None, log=pri
     root = site / FOLDER
     api = HfApi()
     log(f'logged in to Hugging Face as {api.whoami()["name"]}; uploading to datasets/{repo_id}/{FOLDER}')
+    # exactly the files the manifest names (a file a rebuild left behind never goes up)
+    named = [f'{FOLDER}/{path}' for path, _, _ in entries(site).values()]
     api.upload_large_folder(repo_id=repo_id, repo_type='dataset', folder_path=str(site),
-                            allow_patterns=[f'{FOLDER}/units/*', f'{FOLDER}/outlines/*'], num_workers=workers)
+                            allow_patterns=named, num_workers=workers)
     built = json.loads((root / MANIFEST).read_text(encoding='utf-8')).get('data_version', '')
     for name in (INDEX, MANIFEST):
         api.upload_file(path_or_fileobj=str(root / name), path_in_repo=f'{FOLDER}/{name}', repo_id=repo_id,

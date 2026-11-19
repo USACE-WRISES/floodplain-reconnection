@@ -86,6 +86,7 @@ or write `data/paths.local.json` (kept out of the repository):
 | `python run.py report` | `<out>/report/pilot_presets.md` and `.csv`: how each preset narrows the pilot study areas |
 | `python run.py fixtures` | `<out>/fixtures/`: two HUC8 files and `expected.json`, the screening results the web app's tests compare with |
 | `python -m pytest` | The tests. Those that need the data or a STAF checkout skip without them |
+| `python fprdata/publish.py --site <out>/site` | Checks every stored file against `web-manifest.json` (a dry run). With `--yes` it uploads exactly the files the manifest names to the `floodplain-reconnection/` folder of the Hugging Face dataset, then `web-index.json.gz` and `web-manifest.json` last; `--verify` compares the hub with the manifest. It needs `huggingface_hub` and a login with write access (`hf auth login`), and touches nothing else in the dataset |
 
 ## Screening rules
 
