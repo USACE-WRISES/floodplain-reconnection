@@ -36,7 +36,7 @@ export function showHelp(): void {
     <h5>1. Study area</h5>
     <p>Pick watersheds: zoom in and click HUC12 watersheds to add or remove them, then add a whole HUC10 or HUC8 if
     you like. Or choose <b>Upstream of a point</b> and click a stream: everything upstream becomes the study area.
-    Or draw a box with two clicks. The examples load a finished area.</p>
+    Or draw a box with two clicks. The examples load a finished area and go on to Screen.</p>
     <h5>2. Screen</h5>
     <p>Set the criteria. The map colors every reach, and the funnel shows how each criterion narrows the reaches.
     The starting values are placeholders for the project team to set.</p>

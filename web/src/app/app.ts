@@ -748,6 +748,9 @@ export class App {
     if (ex.kind === 'huc') {
       this.mode = 'huc'
       for (const p of ex.prefixes ?? []) for (const c of p.length === 12 ? [p] : await this.expand(p)) this.codes.add(c)
+      // the watersheds' names (the pane's chips, the report) come with their outlines, which the Study
+      // area step would load but an example now passes by
+      await Promise.all([...new Set([...this.codes].map((c) => c.slice(0, 4)))].map((h) => this.huc12Outline(h)))
       this.lastPick = [...this.codes][0] ?? null
       this.renderPane()
       this.afterPicks()
@@ -766,6 +769,9 @@ export class App {
       await this.setWalk(ref)
       this.fitArea()
     }
+    // the area is set, so on to screening, where a click on a reach opens its card (on the Study area
+    // step a click changes the area); not if the user has moved on while the data loaded
+    if (this.result && this.step === 1 && this.sub === 'area') this.goSub('screen')
   }
 
   /** The map framed on the study area. */
