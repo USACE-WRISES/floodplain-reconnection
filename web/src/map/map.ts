@@ -11,8 +11,9 @@ const USGS_ATTR = 'USGS The National Map'
 /** The view the app opens on: the lower 48. */
 export const START = { lat: 38.5, lon: -95.5, zoom: 5 }
 
-/** Panes: the outlines under the reaches, the reaches under the markers. */
-export const PANES = { outlines: 'fprOutlines', units: 'fprUnits', marks: 'fprMarks' }
+/** Panes: the outlines under the reaches, the hovered reach and the chosen site just over them (a canvas
+ * of their own, so a hover never repaints the reaches), the markers on top. */
+export const PANES = { outlines: 'fprOutlines', units: 'fprUnits', highlight: 'fprHighlight', marks: 'fprMarks' }
 
 function usgs(url: string): L.TileLayer {
   return L.tileLayer(url, { attribution: USGS_ATTR, maxNativeZoom: 16, maxZoom: 19 })
@@ -40,6 +41,7 @@ export function makeMap(box: HTMLElement): AppMap {
   topo.addTo(map)
   Object.assign(map.createPane(PANES.outlines).style, { zIndex: '380' })
   Object.assign(map.createPane(PANES.units).style, { zIndex: '420', pointerEvents: 'none' })
+  Object.assign(map.createPane(PANES.highlight).style, { zIndex: '430', pointerEvents: 'none' })
   Object.assign(map.createPane(PANES.marks).style, { zIndex: '640' })
   const coverage = L.layerGroup().addTo(map)
   const picks = L.layerGroup().addTo(map)

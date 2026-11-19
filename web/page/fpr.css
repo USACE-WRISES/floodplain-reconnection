@@ -271,7 +271,8 @@ a { color: var(--fpr-accent); }
 .fpr-readout { position: absolute; right: 12px; bottom: 34px; z-index: 1000; background: rgba(255, 255, 255, .92);
   border: 1px solid var(--card-border); border-radius: 5px; padding: 3px 8px; font-size: 11px; color: var(--fpr-instr);
   font-variant-numeric: tabular-nums; pointer-events: none; }
-.fpr-hover { position: absolute; z-index: 1150; pointer-events: none; max-width: 260px; background: #fff;
+/* moved with a transform (app.ts), so following the pointer never lays the page out again */
+.fpr-hover { position: absolute; left: 0; top: 0; will-change: transform; z-index: 1150; pointer-events: none; max-width: 260px; background: #fff;
   border: 1px solid var(--card-border); border-radius: 7px; box-shadow: 0 6px 22px rgba(20, 40, 80, .16);
   padding: 7px 10px; font-size: 11.5px; line-height: 1.45; color: var(--fpr-instr); }
 .fpr-hover b { color: var(--fpr-title); }

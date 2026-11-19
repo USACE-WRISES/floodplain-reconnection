@@ -97,6 +97,12 @@ export class App {
   private styleTable: LineStyle[] = []
   private styleIds = new Map<string, number>()
   private hoverFrame = 0
+  /** The reach the card shows (undefined: rebuild it at the next move, as after a new screen). */
+  private hoverRef: Ref | null | undefined = null
+  private hoverSize: [number, number] = [0, 0]
+  private crosshair = false
+  /** Where the map sits (viewport px) and its offset in the page's shell, measured on resize. */
+  private layout = { mapLeft: 0, mapTop: 0, dx: 0, dy: 0, w: 0, h: 0 }
   private recomputeFrame = 0
   private inputTimer = 0
 
@@ -107,7 +113,7 @@ export class App {
     this.src.onBusy = (ms) => notify(`The data host is busy. Trying again in ${Math.round(ms / 1000)} s.`, { type: 'warning', id: 'busy', seconds: 6 })
     this.m = makeMap(byId('fpr-map'))
     this.map = this.m.map
-    this.units = new UnitLayer(this.map, this.net, PANES.units)
+    this.units = new UnitLayer(this.map, this.net, PANES.units, PANES.highlight)
     this.buildStyles()
   }
 
@@ -351,6 +357,8 @@ export class App {
     const site = this.ranked.find((s) => s.id === this.selected)
     this.units.setHighlight(site ? site.refs : [])
     this.renderLegend()
+    // the card's text (its site number) is rebuilt at the next move
+    if (this.hoverRef !== null) this.hoverRef = undefined
   }
 
   private renderLegend(): void {
@@ -407,32 +415,89 @@ export class App {
       }
       band = now
     })
-    this.map.on('mousemove', (e: L.LeafletMouseEvent) => {
-      this.readout.textContent = `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)} · zoom ${this.map.getZoom()}`
-      if (this.hoverFrame) cancelAnimationFrame(this.hoverFrame)
+    // The pointer, straight from the map's element (Leaflet hands moves over a canvas on at most every
+    // 32 ms): the latest move is handled once a frame, with positions from a cached layout, so a move
+    // reads no layout and a hover repaints only the highlight canvas.
+    const box = this.map.getContainer()
+    const measure = () => {
+      const shell = byId('fpr-shell').getBoundingClientRect()
+      const map = box.getBoundingClientRect()
+      this.layout = { mapLeft: map.left, mapTop: map.top, dx: map.left - shell.left, dy: map.top - shell.top, w: shell.width, h: shell.height }
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    this.map.on('resize', measure)
+    let last: { x: number, y: number, over: EventTarget | null } | null = null
+    const frame = () => {
+      if (this.hoverFrame) return
       this.hoverFrame = requestAnimationFrame(() => {
         this.hoverFrame = 0
-        this.onHover(e)
+        if (!last) return
+        // over the legend, the Layers control or the zoom buttons: no reach card under them
+        if (last.over instanceof Element && last.over.closest('.leaflet-control')) this.hideHover()
+        else this.onPointer(last.x - this.layout.mapLeft, last.y - this.layout.mapTop)
       })
+    }
+    box.addEventListener('pointermove', (ev: PointerEvent) => {
+      last = { x: ev.clientX, y: ev.clientY, over: ev.target }
+      frame()
+    }, { passive: true })
+    box.addEventListener('pointerleave', () => {
+      last = null
+      this.hideHover()
     })
-    this.map.on('mouseout', () => {
-      this.hover.hidden = true
-      this.units.setHover(null)
-    })
+    // after a pan or a zoom, a pointer that stood still may be over another reach
+    this.map.on('moveend', frame)
     this.map.on('click', (e: L.LeafletMouseEvent) => this.onClick(e))
   }
 
-  private onHover(e: L.LeafletMouseEvent): void {
-    const picking = this.step === 1 && this.sub === 'area' && this.mode === 'box'
-    const ref = picking ? null : this.units.hit(e.latlng)
-    this.units.setHover(ref)
-    const container = this.map.getContainer()
-    container.classList.toggle('fpr-pick', ref !== null)
-    container.classList.toggle('fpr-crosshair', picking)
-    if (ref === null) {
-      this.hover.hidden = true
+  /** The pointer at a point of the map's element (CSS px), once a frame. */
+  private onPointer(x: number, y: number): void {
+    const map = this.map as L.Map & { _animatingZoom?: boolean }
+    // (Leaflet's drag handler has moving(); its typings leave it out)
+    if ((map.dragging as L.Handler & { moving(): boolean }).moving() || map._animatingZoom) {
+      this.hideHover()
       return
     }
+    const latlng = map.containerPointToLatLng([x, y])
+    this.readout.textContent = `${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)} · zoom ${map.getZoom()}`
+    const container = map.getContainer()
+    const picking = this.step === 1 && this.sub === 'area' && this.mode === 'box'
+    if (picking !== this.crosshair) {
+      this.crosshair = picking
+      container.classList.toggle('fpr-crosshair', picking)
+    }
+    const ref = picking ? null : this.units.hit(latlng)
+    if (ref !== this.hoverRef) {
+      // a new reach (or none): the highlight, the cursor and the card's text, then its size, once
+      this.hoverRef = ref
+      this.units.setHover(ref)
+      container.classList.toggle('fpr-pick', ref !== null)
+      if (ref === null) {
+        this.hover.hidden = true
+        return
+      }
+      this.hover.innerHTML = this.hoverHtml(ref)
+      this.hover.hidden = false
+      this.hoverSize = [this.hover.offsetWidth, this.hover.offsetHeight]
+    }
+    if (ref === null) return
+    const { dx, dy, w, h } = this.layout
+    const left = Math.max(8, Math.min(x + dx + 16, w - this.hoverSize[0] - 8))
+    const top = Math.max(56, Math.min(y + dy + 16, h - this.hoverSize[1] - 8))
+    this.hover.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`
+  }
+
+  private hideHover(): void {
+    if (this.hoverRef === null && this.hover.hidden) return
+    this.hoverRef = null
+    this.hover.hidden = true
+    this.units.setHover(null)
+    this.map.getContainer().classList.remove('fpr-pick')
+  }
+
+  /** The card's text for a reach. */
+  private hoverHtml(ref: Ref): string {
     const f = this.net.file(ref)
     const r = rowOf(ref)
     const site = this.siteOf.get(ref)
@@ -442,20 +507,10 @@ export class App {
       <div>Entrenchment ratio <b>${ratio(f.er[r] / 100)}</b></div>
       <div>Low-bank height <b>${ft(f.lbh[r] / 100, 1)} ft</b></div>
       ${q === Q_CAUTION ? '<div class="f">Use with caution</div>' : ''}`
-    this.hover.innerHTML = `<div class="t">${esc(f.name[r] || 'Unnamed stream')}</div>
+    return `<div class="t">${esc(f.name[r] || 'Unnamed stream')}</div>
       ${values}
       <div>Drains <b>${sqmi(f.da[r])} sq mi</b>, ${ft(f.lenM[r])} ft long</div>
       ${site !== undefined ? `<div>Candidate site <b>#${site + 1}</b></div>` : ''}`
-    const p = this.map.mouseEventToContainerPoint(e.originalEvent)
-    const shell = byId('fpr-shell').getBoundingClientRect()
-    const mapBox = container.getBoundingClientRect()
-    const x = p.x + mapBox.left - shell.left
-    const y = p.y + mapBox.top - shell.top
-    this.hover.hidden = false
-    const w = this.hover.offsetWidth
-    const h = this.hover.offsetHeight
-    this.hover.style.left = `${Math.min(x + 16, shell.width - w - 8)}px`
-    this.hover.style.top = `${Math.max(56, Math.min(y + 16, shell.height - h - 8))}px`
   }
 
   private onClick(e: L.LeafletMouseEvent): void {
