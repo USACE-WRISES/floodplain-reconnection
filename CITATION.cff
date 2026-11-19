@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use the Floodplain Reconnection Decision Tool in your work, please cite it as below."
+title: "Floodplain Reconnection Decision Tool"
+type: software
+version: 0.1.0
+date-released: 2026-11-19
+repository-code: "https://github.com/USACE-WRISES/floodplain-reconnection"
+url: "https://usace-wrises.github.io/floodplain-reconnection/"
+abstract: "A web application that helps U.S. Army Corps of Engineers teams find, compare and choose floodplain reconnection projects. Its first step screens stream reaches from a national cross-section grid built on USGS 3DEP elevation data: bank height ratio and entrenchment ratio for every reach of about 1,000 ft, criteria the team sets, and a ranked shortlist of candidate sites."
+authors:
+  - family-names: Menichino
+    given-names: Garrett T.
+    orcid: "https://orcid.org/0009-0005-6719-6356"
+    affiliation: "Environmental Laboratory, U.S. Army Engineer Research and Development Center"
+keywords:
+  - floodplain reconnection
+  - site screening
+  - bank height ratio
+  - entrenchment ratio
+  - stream restoration
+  - Stream Tiered Assessment Framework

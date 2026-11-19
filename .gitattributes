@@ -1,0 +1,10 @@
+# Every text file stays LF on checkout, whatever core.autocrlf says, so a clone on any machine builds
+# the same site and passes the same tests.
+* text=auto eol=lf
+# files kept byte for byte: never converted
+*.png binary
+*.ico binary
+*.woff2 binary
+*.parquet binary
+*.gz binary
+*.pdf binary

@@ -1,0 +1,8 @@
+numpy>=2.0
+pyarrow>=20
+pandas>=2.2
+pyproj>=3.6
+shapely>=2.1
+pyogrio>=0.10
+geopandas>=1.0
+pytest>=8

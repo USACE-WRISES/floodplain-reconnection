@@ -1,0 +1,20 @@
+# The app's packages and its builds
+node_modules/
+web/dist/
+web/coverage/
+
+# This computer's data paths for the builder (never committed: the repository names no machine path)
+*.local.json
+
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local tools', editors' and caches' folders: every dot-folder at the top but .github
+/.*/
+!/.github/
+
+# OS files
+Thumbs.db
+.DS_Store

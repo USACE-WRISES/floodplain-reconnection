@@ -1,0 +1,27 @@
+{
+  "name": "floodplain-reconnection-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The Floodplain Reconnection Decision Tool as a static web app: Step 1 screens stream reaches from the national cross-section grid.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hyparquet": "1.31.3",
+    "hyparquet-compressors": "1.1.2",
+    "leaflet": "1.9.4",
+    "zstddec": "0.2.0"
+  },
+  "devDependencies": {
+    "@types/leaflet": "1.9.20",
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.3"
+  }
+}

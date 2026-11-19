@@ -1,0 +1,4 @@
+__pycache__/
+.pytest_cache/
+# local paths (machine folders never go in the repository)
+paths.local.json

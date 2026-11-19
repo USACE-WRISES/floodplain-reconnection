@@ -1,0 +1,82 @@
+name: Pages
+
+# Every push and pull request is typechecked, tested and built; a push to main is published to
+# GitHub Pages (https://usace-wrises.github.io/floodplain-reconnection/). One-time setup: Settings >
+# Pages > Build and deployment > Source: "GitHub Actions".
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # every commit, for the repository's rules (web/tests/repo_rules.test.ts)
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm --prefix web ci
+
+      - name: Typecheck
+        run: npm --prefix web run typecheck
+
+      - name: Test
+        run: npm --prefix web test
+
+      - name: Build
+        run: npm --prefix web run build
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: web/dist
+
+  data:
+    # the builder's tests that need no local data (the rest skip there)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -r data/requirements.txt
+      - name: Test
+        working-directory: data
+        run: python -m pytest -q
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # the site is the web build; the builder's tests report on their own
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5

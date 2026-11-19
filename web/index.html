@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="theme-color" content="#243a61" />
+    <meta name="description" content="Screen stream reaches for floodplain reconnection from the national cross-section grid." />
+    <title>Floodplain Reconnection Decision Tool</title>
+    <!--fpr:head-->
+  </head>
+  <body>
+    <header class="fpr-header" id="fpr-header">
+      <div class="fpr-header-left">
+        <a class="fpr-brand" href="./" title="Start over"><span class="fpr-brand-long">Floodplain Reconnection</span><span class="fpr-brand-short">Floodplain</span></a>
+        <span class="fpr-tagline">Decision Tool <span class="fpr-beta">Beta</span></span>
+      </div>
+      <nav class="fpr-header-center" aria-label="Workflow steps">
+        <div class="fpr-step-switch" role="tablist">
+          <button type="button" class="fpr-step-btn active" data-step="1" role="tab" aria-selected="true"><span class="fpr-step-n">1</span><span class="fpr-step-long"> Screen sites</span><span class="fpr-step-short"> Screen</span></button>
+          <button type="button" class="fpr-step-btn planned" data-step="2" role="tab" aria-selected="false" title="Planned"><span class="fpr-step-n">2</span><span class="fpr-step-long"> Select measures</span><span class="fpr-step-short"> Measures</span></button>
+          <button type="button" class="fpr-step-btn planned" data-step="3" role="tab" aria-selected="false" title="Planned"><span class="fpr-step-n">3</span><span class="fpr-step-long"> Predict benefits</span><span class="fpr-step-short"> Benefits</span></button>
+          <button type="button" class="fpr-step-btn planned" data-step="4" role="tab" aria-selected="false" title="Planned"><span class="fpr-step-n">4</span><span class="fpr-step-long"> Decide</span><span class="fpr-step-short"> Decide</span></button>
+        </div>
+      </nav>
+      <div class="fpr-header-right">
+        <nav class="fpr-nav" id="fpr-nav">
+          <a href="#" id="fpr-nav-new">New</a>
+          <a href="#" id="fpr-nav-open">Open</a>
+          <a href="#" id="fpr-nav-save" class="fpr-download-link">Save</a>
+          <a href="#" id="fpr-nav-about" class="fpr-nav-sep">About</a>
+          <a href="#" id="fpr-nav-help">Help</a>
+        </nav>
+        <button type="button" class="fpr-menu-btn" id="fpr-menu-btn" aria-expanded="false">Menu</button>
+        <input type="file" id="fpr-open-file" accept=".json,application/json" hidden />
+      </div>
+    </header>
+    <main class="fpr-shell" id="fpr-shell">
+      <div class="fpr-map-wrap"><div id="fpr-map" aria-label="Map"></div></div>
+      <aside class="fpr-pane" id="fpr-pane" aria-label="Workflow"></aside>
+      <div class="fpr-cue-slot" id="fpr-cue" aria-live="polite"></div>
+      <div class="fpr-readout" id="fpr-readout"></div>
+      <div class="fpr-hover" id="fpr-hover" hidden></div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
