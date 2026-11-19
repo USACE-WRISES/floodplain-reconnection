@@ -43,22 +43,6 @@ export function dataVersion(m: WebManifest | null): string {
   return m?.data_version ?? 'unknown'
 }
 
-/** HUC8s upstream of `start` (itself included), through the index's links, breadth first; stops
- * at `cap` files (the second value says whether it stopped short). */
-export function upstreamHuc8s(idx: FprIndex, start: string, cap: number): [string[], boolean] {
-  const seen = new Set<string>([start])
-  const order = [start]
-  for (let i = 0; i < order.length; i++) {
-    for (const up of idx.huc8[order[i]]?.up ?? []) {
-      if (seen.has(up) || !idx.huc8[up]) continue
-      if (order.length >= cap) return [order, true]
-      seen.add(up)
-      order.push(up)
-    }
-  }
-  return [order, false]
-}
-
 /** HUC8s whose extent meets a box (degrees). */
 export function huc8sInBox(idx: FprIndex, w: number, s: number, e: number, n: number): string[] {
   const out: string[] = []

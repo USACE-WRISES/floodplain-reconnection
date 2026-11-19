@@ -343,6 +343,8 @@ a { color: var(--fpr-accent); }
 }
 @media (max-width: 820px) {
   :root { --pane-width: calc(100vw - 24px); }
+  .fpr-legend { width: 150px; font-size: 10px; padding: 5px 8px 6px; gap: 3px; }
+  .fpr-legend-title { font-size: 10px; }
   .fpr-pane { top: auto; bottom: 12px; max-height: 46vh; }
   .fpr-map-wrap .leaflet-top.leaflet-left { left: 0; }
   .fpr-cue-slot { left: 56px; right: 60px; }

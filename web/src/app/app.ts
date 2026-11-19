@@ -161,15 +161,27 @@ export class App {
     }
   }
 
+  /** The coverage's look by zoom: a soft tint where reaches are built at the national view (no lines,
+   * so the map stays clean), outlines from zoom 7, and outlines only once reaches show. */
+  private coverageBand(): number {
+    const z = this.map.getZoom()
+    return z < 7 ? 0 : z < PICK_ZOOM ? 1 : 2
+  }
+
   private coverageStyle(code: string): L.PathOptions {
     const info = this.idx?.huc8[code]
-    const low = this.map.getZoom() < PICK_ZOOM
-    if (!info) return { color: '#8a94a6', weight: low ? 0.6 : 0.4, opacity: 0.5, fill: low, fillOpacity: 0.0, dashArray: '3 3' }
-    const built = info.status === 'built'
-    return {
-      color: built ? '#2f4b7c' : '#b7791f', weight: low ? 1 : 0.8, opacity: low ? 0.8 : 0.5,
-      fill: true, fillColor: built ? '#2f4b7c' : '#e9c46a', fillOpacity: low ? (built ? 0.14 : 0.18) : 0,
+    const band = this.coverageBand()
+    // fill stays on (at no opacity where nothing shows) so a watershed's name still shows on hover
+    if (!info) {
+      return band === 0 ? { stroke: false, fill: true, fillOpacity: 0 }
+        : { color: '#8a94a6', weight: band === 1 ? 0.5 : 0.4, opacity: 0.5, dashArray: '3 3', fill: true, fillOpacity: 0 }
     }
+    const built = info.status === 'built'
+    const color = built ? '#2f4b7c' : '#b7791f'
+    const fillColor = built ? '#2f4b7c' : '#e9c46a'
+    if (band === 0) return { stroke: false, fill: true, fillColor, fillOpacity: built ? 0.16 : 0.28 }
+    if (band === 1) return { stroke: true, color, weight: 0.8, opacity: 0.6, fill: true, fillColor, fillOpacity: built ? 0.1 : 0.18 }
+    return { stroke: true, color, weight: 0.8, opacity: 0.5, fill: true, fillColor, fillOpacity: 0 }
   }
 
   // ---------------------------------------------------------------- data
@@ -366,28 +378,34 @@ export class App {
         ${sw(UNSAMPLED, 'Not sampled')}`
     }
     if (area) html += `<div class="fpr-legend-sep"></div>${sw('#7d8ba1', 'Outside the study area')}`
-    if (!this.net.files.length) html += `<div class="fpr-legend-sep"></div><div class="fpr-legend-row" style="color:#646f80">Zoom in to see reaches.</div>`
+    if (!this.net.files.length) {
+      const tint = (fill: string, label: string) => `<div class="fpr-legend-row"><span class="fpr-legend-sw box" style="--sw:${fill};background:${fill}40"></span><span>${esc(label)}</span></div>`
+      html += `<div class="fpr-legend-sep"></div>${tint('#2f4b7c', 'Reaches built')}${tint('#e9c46a', 'Partly built')}
+        <div class="fpr-legend-row" style="color:#646f80">Zoom in to see reaches.</div>`
+    }
     this.m.legend.innerHTML = html
   }
 
   // ---------------------------------------------------------------- the map's events
 
   private wireMap(): void {
-    let low = this.map.getZoom() < PICK_ZOOM
+    let band = this.coverageBand()
     this.map.on('moveend', () => {
       this.autoLoad()
       this.updatePicks()
       this.updateCue()
-      const nowLow = this.map.getZoom() < PICK_ZOOM
-      if (this.coverageLayer && nowLow !== low) {
+      const now = this.coverageBand()
+      if (this.coverageLayer && now !== band) {
         this.coverageLayer.setStyle((feat) => this.coverageStyle(String(feat?.properties?.huc8 ?? '')))
-        // the watershed names show at the national view only (zoomed in, the reaches carry the pointer)
-        this.coverageLayer.eachLayer((l) => {
-          if (nowLow) l.bindTooltip(this.coverageTips.get(l) ?? '', { sticky: true, className: 'fpr-tip' })
-          else l.unbindTooltip()
-        })
+        // the watershed names show until reaches do (zoomed in, the reaches carry the pointer)
+        if ((now === 2) !== (band === 2)) {
+          this.coverageLayer.eachLayer((l) => {
+            if (now < 2) l.bindTooltip(this.coverageTips.get(l) ?? '', { sticky: true, className: 'fpr-tip' })
+            else l.unbindTooltip()
+          })
+        }
       }
-      low = nowLow
+      band = now
     })
     this.map.on('mousemove', (e: L.LeafletMouseEvent) => {
       this.readout.textContent = `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)} · zoom ${this.map.getZoom()}`
