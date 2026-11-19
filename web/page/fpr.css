@@ -129,6 +129,8 @@ a { color: var(--fpr-accent); }
 .fpr-map-wrap .leaflet-top.leaflet-right .leaflet-control { float: none; }
 .fpr-unit-canvas { pointer-events: none; }
 .leaflet-container.fpr-pick { cursor: pointer; }
+/* over a reach, its card is the one box by the pointer (the watershed names under it wait) */
+.leaflet-container.fpr-pick .fpr-tip-area { visibility: hidden; }
 .leaflet-container.fpr-crosshair { cursor: crosshair; }
 
 /* ============ 5. the left workflow pane ============ */

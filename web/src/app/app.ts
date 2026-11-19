@@ -90,6 +90,9 @@ export class App {
   private huc12Layers = new Map<string, L.GeoJSON>()
   private huc12Loading = new Map<string, Promise<L.GeoJSON | null>>()
   private huc12Names = new Map<string, string>()
+  /** The watershed under the pointer while picking: its outline drawn stronger, its name in the cue. */
+  private hucHover: string | null = null
+  private hucHoverLayer: L.Path | null = null
   private coverageLayer: L.GeoJSON | null = null
   private coverageTips = new Map<L.Layer, string>()
   /** One canvas for every outline (a canvas takes the pointer for the shapes it draws only) */
@@ -154,7 +157,7 @@ export class App {
           const info = this.idx?.huc8[code]
           const status = info ? (info.status === 'built' ? 'reaches built' : 'reaches partly built') : 'not built yet'
           this.coverageTips.set(layer, `${esc(feat.properties?.name ?? '')} (HUC8 ${esc(code)}): ${status}`)
-          if (this.map.getZoom() < PICK_ZOOM) layer.bindTooltip(this.coverageTips.get(layer)!, { sticky: true, className: 'fpr-tip' })
+          if (this.map.getZoom() < PICK_ZOOM) layer.bindTooltip(this.coverageTips.get(layer)!, { sticky: true, className: 'fpr-tip fpr-tip-area' })
           layer.on('click', () => {
             if (this.map.getZoom() < PICK_ZOOM) this.map.fitBounds((layer as L.Polygon).getBounds(), { maxZoom: 11 })
           })
@@ -408,7 +411,7 @@ export class App {
         // the watershed names show until reaches do (zoomed in, the reaches carry the pointer)
         if ((now === 2) !== (band === 2)) {
           this.coverageLayer.eachLayer((l) => {
-            if (now < 2) l.bindTooltip(this.coverageTips.get(l) ?? '', { sticky: true, className: 'fpr-tip' })
+            if (now < 2) l.bindTooltip(this.coverageTips.get(l) ?? '', { sticky: true, className: 'fpr-tip fpr-tip-area' })
             else l.unbindTooltip()
           })
         }
@@ -627,6 +630,7 @@ export class App {
   private updatePicks(): void {
     if (!this.pickingOn()) {
       this.m.picks.clearLayers()
+      this.setHucHover(null, null)
       return
     }
     const want = new Set(this.visibleHuc4s())
@@ -653,7 +657,12 @@ export class App {
             onEachFeature: (feat, l) => {
               const code = String(feat.properties?.huc12 ?? '')
               this.huc12Names.set(code, String(feat.properties?.name ?? ''))
-              l.bindTooltip(`${esc(feat.properties?.name ?? '')}<br><small>HUC12 ${esc(code)}</small>`, { sticky: true, className: 'fpr-tip' })
+              // the name goes in the cue, not by the pointer: zoomed in, the pointer is always inside one
+              // watershed, and a label there sat beside the reach card wherever the pointer went
+              l.on('mouseover', () => this.setHucHover(code, l as L.Path))
+              l.on('mouseout', () => {
+                if (this.hucHover === code) this.setHucHover(null, null)
+              })
               l.on('click', () => this.togglePick(code))
             },
           }
@@ -670,9 +679,24 @@ export class App {
 
   private huc12Style(code: string): L.PathOptions {
     const on = this.codes.has(code)
+    const hover = code === this.hucHover
     return on
-      ? { color: '#c2410c', weight: 2, opacity: 0.95, fill: true, fillColor: '#c2410c', fillOpacity: 0.12 }
-      : { color: '#2f4b7c', weight: 0.9, opacity: 0.55, fill: true, fillColor: '#2f4b7c', fillOpacity: 0.02 }
+      ? { color: '#c2410c', weight: hover ? 3.5 : 2, opacity: 0.95, fill: true, fillColor: '#c2410c', fillOpacity: hover ? 0.2 : 0.12 }
+      : { color: '#2f4b7c', weight: hover ? 2.5 : 0.9, opacity: hover ? 0.95 : 0.55, fill: true, fillColor: '#2f4b7c', fillOpacity: hover ? 0.08 : 0.02 }
+  }
+
+  private setHucHover(code: string | null, layer: L.Path | null): void {
+    if (code === this.hucHover) return
+    const before = this.hucHoverLayer
+    const beforeCode = this.hucHover
+    this.hucHover = code
+    this.hucHoverLayer = layer
+    if (before && beforeCode !== null) before.setStyle(this.huc12Style(beforeCode))
+    if (layer && code !== null) {
+      layer.setStyle(this.huc12Style(code))
+      layer.bringToFront()
+    }
+    this.updateCue()
   }
 
   private restylePicks(): void {
@@ -691,6 +715,8 @@ export class App {
     this.touch()
     this.restylePicks()
     this.recompute()
+    // the cue says what a click on the watershed under the pointer does now
+    this.updateCue()
     void this.ensureFiles(hucFiles([...this.codes]))
   }
 
@@ -1573,7 +1599,11 @@ export class App {
     const z = this.map.getZoom()
     if (this.step === 1 && this.sub === 'area') {
       if (this.mode === 'huc' && z < PICK_ZOOM) text = 'Zoom in to pick watersheds.'
-      else if (this.mode === 'walk' && z < VIEW_ZOOM) text = 'Zoom in until streams show, then click one.'
+      else if (this.mode === 'huc' && this.hucHover !== null) {
+        const name = this.huc12Names.get(this.hucHover)
+        const click = this.codes.has(this.hucHover) ? 'Click to remove it from the study area.' : 'Click to add it to the study area.'
+        text = `${name ? `${name}, ` : ''}HUC12 ${this.hucHover}. ${click}`
+      } else if (this.mode === 'walk' && z < VIEW_ZOOM) text = 'Zoom in until streams show, then click one.'
       else if (this.mode === 'walk' && !this.walkFrom) text = 'Click a stream. Everything upstream becomes the study area.'
       else if (this.mode === 'box') text = this.corner ? 'Click the opposite corner.' : this.box ? '' : 'Click the first corner of the box.'
     } else if (!this.result && z < VIEW_ZOOM && this.idx) text = 'Zoom in to see reaches.'
