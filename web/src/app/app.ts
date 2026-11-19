@@ -9,6 +9,7 @@ import { huc12Text, latOf, loadUnits, lonOf, mercX, mercY, Q_CAUTION, Q_NODATA, 
 import { makeMap, outlineRenderer, PANES, START, type AppMap } from '../map/map'
 import { AT_CAP, binColor, binOf, BINS, MATCH, NO_DATA, RAMPS, rampColor, rampGradient, UNSAMPLED, type RampSpec } from '../map/ramp'
 import { UnitLayer, type LineStyle } from '../map/unitLayer'
+import { Edits } from '../screen/edits'
 import { bhrText, count, flagTexts, ft, mi, QUALITY_LABEL, ratio, slopeText, sqmi } from '../screen/format'
 import { boxMask, hucFiles, hucMask, Network, refMask, refOf, rowOf, type Ref } from '../screen/model'
 import { defaultCriteria, presetOf, PRESETS, rankSites, screen, SORTS, STAGE, type Criteria, type ScreenResult, type Site, type SortKey } from '../screen/screen'
@@ -21,6 +22,7 @@ import { closeModal, showModal } from './modal'
 import { notify } from './notify'
 import { wireSearch } from './search'
 import { profileSvg } from './xscard'
+import { ReachExplorer } from './xsexplorer'
 
 type Sub = 'area' | 'screen' | 'shortlist' | 'report'
 type Mode = 'huc' | 'walk' | 'box'
@@ -55,6 +57,8 @@ export class App {
   idx: FprIndex | null = null
   version = 'unknown'
   readonly net = new Network()
+  /** the user's cross-section edits (screen/edits.ts): patched into each file as it loads */
+  readonly edits = new Edits()
   readonly m: AppMap
   readonly map: L.Map
   readonly units: UnitLayer
@@ -205,6 +209,11 @@ export class App {
         this.busy++
         this.renderBusy()
         job = loadUnits(this.src, h).then((f: UnitFile) => {
+          const gone = this.edits.applyFile(f)
+          if (gone.length) {
+            notify(`Cross-section edits on ${gone.length} reach${gone.length === 1 ? '' : 'es'} of HUC8 ${h} were dropped: the data no longer hold ${gone.length === 1 ? 'that reach' : 'those reaches'} as saved.`,
+              { type: 'warning', seconds: 12 })
+          }
           this.net.add(f)
           this.scheduleRecompute()
         }).catch((err) => {
@@ -513,6 +522,7 @@ export class App {
     return `<div class="t">${esc(f.name[r] || 'Unnamed stream')}</div>
       ${values}
       <div>Drains <b>${sqmi(f.da[r])} sq mi</b>, ${ft(f.lenM[r])} ft long</div>
+      ${f.edited[r] ? `<div class="f">Screened on your edits of ${f.edited[r]} cross-section${f.edited[r] === 1 ? '' : 's'}</div>` : ''}
       ${site !== undefined ? `<div>Candidate site <b>#${site + 1}</b></div>` : ''}`
   }
 
@@ -1297,6 +1307,8 @@ export class App {
     out.push(`Sites ${count(c.minSiteFt)} ft or longer, joined across gaps of up to ${c.gapReaches} reach${c.gapReaches === 1 ? '' : 'es'}`)
     const preset = presetOf(c)
     if (preset) out.push(`Starting values: ${preset.label}`)
+    const edited = this.edits.size
+    if (edited) out.push(`Cross-sections edited on ${count(edited)} reach${edited === 1 ? '' : 'es'}: each is screened on its edited sections`)
     return out
   }
 
@@ -1332,7 +1344,7 @@ export class App {
     if (!this.result) return null
     return {
       areaText: this.areaText(), dataVersion: this.version, criteria: this.criteria, criteriaText: this.criteriaText(),
-      result: this.result, ranked: this.ranked, decisions: this.decisions, net: this.net, masks: this.masks, made: new Date(),
+      result: this.result, ranked: this.ranked, decisions: this.decisions, net: this.net, masks: this.masks, edits: this.edits, made: new Date(),
     }
   }
 
@@ -1368,14 +1380,57 @@ export class App {
   showReach(ref: Ref): void {
     const f = this.net.file(ref)
     const r = rowOf(ref)
+    let explorer: ReachExplorer | null = null
+    const body = showModal(f.name[r] || 'Unnamed stream', `
+      <div data-reach-head></div>
+      <div data-reach-xs></div>
+      <div data-reach-facts></div>`, { size: 'xl', onClose: () => explorer?.close() })
+    const head = body.querySelector<HTMLElement>('[data-reach-head]')!
+    const facts = body.querySelector<HTMLElement>('[data-reach-facts]')!
+    const fill = () => {
+      head.innerHTML = this.reachHead(f, r, ref)
+      facts.innerHTML = this.reachFacts(f, r)
+    }
+    fill()
+    head.addEventListener('click', (e) => {
+      const a = (e.target as HTMLElement).closest<HTMLElement>('[data-site]')
+      if (!a) return
+      e.preventDefault()
+      closeModal()
+      this.showSite(a.dataset.site!)
+    })
+    explorer = new ReachExplorer({
+      staf: this.staf,
+      edits: this.edits,
+      changed: () => {
+        this.touch()
+        this.recompute()
+        fill()
+      },
+    }, f, r, body.querySelector<HTMLElement>('[data-reach-xs]')!)
+    void explorer.start()
+  }
+
+  /** The reach popup's first lines: where it is, and its site. */
+  private reachHead(f: UnitFile, r: number, ref: Ref): string {
     const site = this.siteOf.get(ref)
+    return `<p class="fpr-note" style="margin-top:0">Reach ${esc(reachId(f, r))} · HUC12 ${esc(huc12Text(f, r) || 'n/a')} · region ${esc(f.vpu[r])}
+      · ${ft(f.lenM[r])} ft long, drains ${sqmi(f.da[r])} sq mi</p>
+      ${site !== undefined ? `<p>Part of candidate site <b>#${site + 1}</b>. <a href="#" data-site="${esc(this.ranked[site].id)}">Open the site</a></p>` : ''}`
+  }
+
+  /** The reach popup's facts: the values it is screened on (the user's where edited) and the notes. */
+  private reachFacts(f: UnitFile, r: number): string {
     const q = f.q[r]
     const hide = q >= Q_NODATA
     const row = (k: string, v: string) => `<tr><th>${esc(k)}</th><td>${v}</td></tr>`
-    const flags = flagTexts(f, r)
-    const body = showModal(f.name[r] || 'Unnamed stream', `
-      <p class="fpr-note" style="margin-top:0">Reach ${esc(reachId(f, r))} · HUC12 ${esc(huc12Text(f, r) || 'n/a')} · region ${esc(f.vpu[r])}</p>
-      ${site !== undefined ? `<p>Part of candidate site <b>#${site + 1}</b>. <a href="#" data-site="${esc(this.ranked[site].id)}">Open the site</a></p>` : ''}
+    const g = this.edits.grid(f, r)
+    const mine = f.edited[r] > 0
+    const notes = mine
+      ? [`Screened on your edits of ${f.edited[r]} of ${f.n[r]} cross-sections (the grid's median: bank height ratio ${g.why & WHY.atCap ? 'at least ' : ''}${ratio(g.bhr / 100)}, entrenchment ratio ${ratio(g.er / 100)}).`,
+        ...flagTexts(f, r, g.why, g.q).map((t) => `The grid's: ${t}`)]
+      : flagTexts(f, r)
+    return `<h5 class="fpr-xsx-h">${mine ? 'Screened on (your edits)' : 'Screened on'}</h5>
       <table class="fpr-tbl"><tbody>
         ${row('Quality', esc(QUALITY_LABEL[q]))}
         ${hide ? '' : row('Bank height ratio', `${esc(bhrText(f, r))} <span class="fpr-note">(${ratio(f.bhrLo[r] / 100)} to ${ratio(f.bhrHi[r] / 100)})</span>`)}
@@ -1383,20 +1438,10 @@ export class App {
         ${hide ? '' : row('Low-bank height', `${ft(f.lbh[r] / 100, 1)} ft`)}
         ${hide ? '' : row('Bankfull depth and width', `${ft(f.bfd[r] / 100, 1)} ft, ${ft(f.bfw[r] / 10)} ft`)}
         ${hide ? '' : row('Flood-prone width', `${ft(f.fpw[r] / 10)} ft`)}
-        ${row('Drainage area', `${sqmi(f.da[r])} sq mi`)}
         ${row('Slope', esc(slopeText(f.slope[r])))}
-        ${row('Length', `${ft(f.lenM[r])} ft`)}
-        ${q === Q_UNSAMPLED ? '' : row('Cross-sections', `${f.nOk[r]} of ${f.n[r]} measured${f.res[r] ? `, ${f.res[r]} m elevation model` : ''}`)}
+        ${q === Q_UNSAMPLED ? '' : row('Cross-sections', `${f.nOk[r]} of ${f.n[r]} measured by the grid${f.res[r] ? `, ${f.res[r]} m elevation model` : ''}`)}
       </tbody></table>
-      ${flags.length ? `<h5>Notes</h5><ul>${flags.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
-      <div id="fpr-xs-slot"></div>`)
-    body.querySelector<HTMLElement>('[data-site]')?.addEventListener('click', (e) => {
-      e.preventDefault()
-      const id = (e.currentTarget as HTMLElement).dataset.site!
-      closeModal()
-      this.showSite(id)
-    })
-    void this.fillProfile(body.querySelector('#fpr-xs-slot'), f, r)
+      ${notes.length ? `<h5>Notes</h5><ul>${notes.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}`
   }
 
   private async fillProfile(slot: Element | null, f: UnitFile, r: number): Promise<void> {
@@ -1431,7 +1476,8 @@ export class App {
       return `<tr${s.pass[j] ? '' : ' class="sel"'}><td>${j + 1}</td><td>${esc(reachId(f, r))}</td><td class="num">${ft(f.lenM[r])}</td>
         <td class="num">${hide ? 'n/a' : esc(bhrText(f, r))}</td><td class="num">${hide ? 'n/a' : ratio(f.er[r] / 100)}</td>
         <td class="num">${hide ? 'n/a' : ft(f.lbh[r] / 100, 1)}</td><td class="num">${hide ? 'n/a' : ft(f.bfw[r] / 10)}</td>
-        <td class="num">${hide ? 'n/a' : ft(f.fpw[r] / 10)}</td><td>${s.pass[j] ? (f.q[r] === Q_CAUTION ? '<span class="fpr-flag">caution</span>' : '') : 'gap'}</td></tr>`
+        <td class="num">${hide ? 'n/a' : ft(f.fpw[r] / 10)}</td><td>${[s.pass[j] ? (f.q[r] === Q_CAUTION ? '<span class="fpr-flag">caution</span>' : '') : 'gap',
+          f.edited[r] ? '<span class="fpr-flag">edited</span>' : ''].filter(Boolean).join(', ')}</td></tr>`
     }).join('')
     const withProfile = s.refs.find((ref) => Number.isFinite(this.net.file(ref).profId[rowOf(ref)]))
     const body = showModal(`Site ${i + 1}. ${s.name || 'Unnamed stream'}`, `
@@ -1546,6 +1592,7 @@ export class App {
     this.colorBy = 'bhr'
     this.sort = 'length'
     this.decisions.clear()
+    this.edits.clearAll(this.net.files)
     this.showAll = false
     this.sub = 'area'
     this.dirty = false
@@ -1558,9 +1605,9 @@ export class App {
     const decisions: Record<string, Decision> = {}
     for (const [k, v] of this.decisions) if (!v.keep || v.note) decisions[k] = v
     return {
-      format: 'fpr-screening', version: 1, app_version: APP_VERSION, data_version: this.version, saved_at: new Date().toISOString(),
+      format: 'fpr-screening', version: 2, app_version: APP_VERSION, data_version: this.version, saved_at: new Date().toISOString(),
       area: { mode: this.mode, codes: [...this.codes].sort(), walk: this.walkFrom, box: this.box },
-      criteria: this.criteria, color_by: this.colorBy, sort: this.sort, sub: this.sub, decisions,
+      criteria: this.criteria, color_by: this.colorBy, sort: this.sort, sub: this.sub, decisions, edits: this.edits.toJSON(),
     }
   }
 
@@ -1571,6 +1618,12 @@ export class App {
     this.colorBy = (['bhr', 'er', 'match'].includes(s.color_by) ? s.color_by : 'bhr') as ColorBy
     this.sort = (SORTS.some((x) => x.key === s.sort) ? s.sort : 'length') as SortKey
     for (const [k, v] of Object.entries(s.decisions ?? {})) this.decisions.set(k, { keep: v.keep !== false, note: String(v.note ?? '') })
+    // the cross-section edits, with their numbers (no pull needed): into the files already loaded now,
+    // and into the others as they load
+    this.edits.load(s.edits ?? {})
+    let gone = 0
+    for (const f of this.net.files) gone += this.edits.applyFile(f).length
+    if (gone) notify(`Cross-section edits on ${gone} reach${gone === 1 ? '' : 'es'} were dropped: the data no longer hold ${gone === 1 ? 'that reach' : 'those reaches'} as saved.`, { type: 'warning', seconds: 12 })
     this.renderPane()
     if (this.mode === 'huc') {
       for (const c of s.area.codes ?? []) this.codes.add(c)

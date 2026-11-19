@@ -107,7 +107,8 @@ describe('the page', () => {
     expect(fonts.length).toBeGreaterThan(0)
     for (const f of fonts) expect(readFileSync(f).subarray(0, 4).toString('latin1'), rel(f)).toBe('wOF2')
     const notices = readFileSync(join(page, 'licenses.txt'), 'utf-8')
-    for (const name of ['Open Sans', 'Instrument Sans', 'Space Grotesk', 'Leaflet', 'Bootstrap', 'hyparquet', 'zstddec']) expect(notices).toContain(name)
+    for (const name of ['Open Sans', 'Source Code Pro', 'Instrument Sans', 'Space Grotesk', 'Leaflet', 'Bootstrap', 'hyparquet', 'zstddec',
+      'geotiff', 'float16', 'lerc', 'pako', 'parse-headers', 'quick-lru', 'xml-utils', 'SIL OPEN FONT LICENSE']) expect(notices).toContain(name)
     const md = readFileSync(join(REPO, 'THIRD_PARTY_NOTICES.md'), 'utf-8')
     expect(/```text\n([\s\S]*?)```/.exec(md)?.[1]).toBe(notices)
   })
@@ -125,7 +126,7 @@ function git(args: string[]): string | null {
 }
 
 const inGit = git(['rev-parse', '--is-inside-work-tree'])?.trim() === 'true'
-const BINARY = new Set(['.png', '.ico', '.woff2', '.pdf', '.parquet', '.gz'])
+const BINARY = new Set(['.png', '.ico', '.woff2', '.pdf', '.parquet', '.gz', '.tif'])
 
 describe.skipIf(!inGit)('the public repository', () => {
   const files = (git(['ls-files', '-z', '--cached', '--others', '--exclude-standard']) ?? '').split('\0').filter(Boolean)

@@ -26,9 +26,22 @@ export const WHY = {
   noDem: 1024,
 } as const
 
+/** The `why` bits that make a reach "not enough data" (q 2) and "use with caution" (q 1); atCap is
+ * neither (data/fprdata/stats.py). */
+export const WHY_NODATA = WHY.few | WHY.bhrRange | WHY.erRange | WHY.capFloor | WHY.noDem
+export const WHY_CAUTION = WHY.extrapolated | WHY.crestOnly | WHY.fewish | WHY.edge | WHY.coarseDem
+
+/** The tier of a set of `why` bits (a sampled reach). */
+export function tierOf(why: number): number {
+  return why & WHY_NODATA ? Q_NODATA : why & WHY_CAUTION ? Q_CAUTION : Q_OK
+}
+
 /** Line classes (`fclass`). */
 export const FCLASS = { stream: 1, canal: 2, artificial: 3, connector: 4 } as const
 
+/** A reach file in memory. The value arrays (bhr to lbh, q, why) hold what the screen uses: the grid's
+ * values, or, on a reach whose cross-sections the user edited, the values of the edited sections
+ * (screen/edits.ts patches them and keeps the grid's aside; `edited` counts the edited sections). */
 export interface UnitFile {
   huc8: string
   rows: number
@@ -66,6 +79,8 @@ export interface UnitFile {
   lbh: Float64Array
   q: Uint8Array
   why: Int32Array
+  /** cross-sections the user edited (0: the grid's values) */
+  edited: Uint8Array
   profId: Float64Array
   profK: Float64Array
   dnHuc8: Int32Array
@@ -189,6 +204,7 @@ export function unpack(huc8: string, cols: Record<string, any>): UnitFile {
     lbh: cols.lbh,
     q: cols.q,
     why: cols.why,
+    edited: new Uint8Array(rows),
     profId: cols.prof_id,
     profK: cols.prof_k,
     dnHuc8: cols.dn_huc8,

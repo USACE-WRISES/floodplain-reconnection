@@ -46,12 +46,18 @@ export function showHelp(): void {
     and a stored cross-section where one exists.</p>
     <h5>4. Report</h5>
     <p>Download the shortlist as CSV or GeoJSON (for GIS or a finer screen such as FluvialGeomorph), every reach of
-    the study area as CSV, or a printable summary. <b>Save</b> writes your study area, criteria and decisions to a
-    file that <b>Open</b> reads back.</p>
+    the study area as CSV, or a printable summary. <b>Save</b> writes your study area, criteria, decisions and
+    cross-section edits to a file that <b>Open</b> reads back.</p>
+    <h5>A reach's cross-sections</h5>
+    <p>Click a reach for its cross-sections: each section's geometry and ratios beside the reach medians, one at a
+    time. A section the grid stores is drawn at once; <b>Pull from 3DEP</b> draws any other, only when you ask. Set
+    your own bankfull depth and low-bank height by dragging the lines or typing the heights; the flood-prone line
+    follows bankfull. A reach you edit is screened on your edited sections (their median when several), and the map,
+    the funnel and the sites follow. <b>Reset this section</b> or <b>Clear my edits</b> returns the grid's values.</p>
     <h5>On the map</h5>
     <ul>
       <li>Zoom in past the coverage outlines to see reaches anywhere the grid is built.</li>
-      <li>Point at a reach for its values. Click it for its details.</li>
+      <li>Point at a reach for its values. Click it for its cross-sections and details.</li>
       <li>Dashed reaches carry a caution. Gray reaches have too little data or are not sampled.</li>
     </ul>
     <p><a href="#" data-open-methods>Methods and limits</a></p>`)
@@ -82,6 +88,13 @@ export function showMethods(idx: FprIndex | null): void {
       by the highest ground, 3 or 4 sections measured, a flood-prone width that runs off the sampled line, or a
       3 m or 10 m elevation model.</li>
     </ul>
+    <h5>Your cross-section edits</h5>
+    <p>On a section's 3DEP profile (stored, or pulled again exactly as the grid sampled it), you can set the bankfull
+    depth and the low-bank height. The section is then measured as the grid measures it, at your heights: the
+    flood-prone stage is the bed plus twice your bankfull depth, and the bank height ratio is your low-bank height
+    over your bankfull depth, with no cap. A reach you edit is screened on your edited sections only (their median
+    when several); the grid's flags no longer apply to it, except a ratio outside its physical range ("not enough
+    data"), and a flood-prone width that runs off the profile or a 3 m or 10 m elevation model ("use with caution").</p>
     <h5>Sites</h5>
     <p>Reaches that meet every criterion and touch along a main stem make a candidate site. Short gaps can be
     bridged. Site values are the medians of their reaches' values.</p>

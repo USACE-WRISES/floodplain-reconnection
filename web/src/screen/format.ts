@@ -47,12 +47,13 @@ export const QUALITY_LABEL: Record<number, string> = {
   [Q_UNSAMPLED]: 'Not sampled',
 }
 
-/** The flags of a row, each in plain words. */
-export function flagTexts(f: UnitFile, r: number): string[] {
+/** The flags of a row, each in plain words: its own, or (`why`, `q` given) the grid's for a reach the
+ * user edited. */
+export function flagTexts(f: UnitFile, r: number, why = f.why[r], q = f.q[r]): string[] {
   const out: string[] = []
-  const w = f.why[r]
+  const w = why
   const n = f.n[r]
-  if (f.q[r] === Q_UNSAMPLED) {
+  if (q === Q_UNSAMPLED) {
     return ['The grid does not sample this line: wide rivers mapped as artificial paths, lakes and connectors have no cross-sections.']
   }
   if (w & WHY.noDem) out.push('No elevation data here.')

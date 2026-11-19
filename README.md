@@ -26,6 +26,11 @@ Ecosystem Management and Restoration Research Program (EMRRP), fiscal years 2027
 4. **Report.** The shortlist as CSV and GeoJSON, every reach as CSV, a printable summary, and a saved
    screening that Open reads back.
 
+Clicking a reach opens its cross-sections: each section's geometry and ratios beside the reach medians,
+the profile the grid stores drawn at once and any other pulled from USGS 3DEP on request. The user can
+drag the bankfull and low-bank lines (or type the heights) to set their own; a reach the user edits is
+screened on the edited sections, and the edits are saved with the screening.
+
 The values are raw values from the grid, not condition classes. Classes stay off until they pass a
 field check set in advance. `docs/methods.md` describes the method and its limits.
 

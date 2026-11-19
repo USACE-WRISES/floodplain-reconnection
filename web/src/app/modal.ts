@@ -35,9 +35,16 @@ export function showModal(title: string, body: string, opts: ModalOptions = {}):
     if (e.key === 'Escape') closeModal()
   }
   document.addEventListener('keydown', keys)
+  // a click outside closes it only when the press began outside too: a drag inside the dialog (a
+  // cross-section line, a text selection) released over the backdrop must not close it
+  let pressedOutside = false
+  root.addEventListener('pointerdown', (e) => {
+    pressedOutside = e.target === root
+  })
   root.addEventListener('click', (e) => {
     const t = e.target as HTMLElement
-    if (t === root || t.closest('[data-close]')) closeModal()
+    if (t.closest('[data-close]') || (t === root && pressedOutside)) closeModal()
+    pressedOutside = false
   })
   open = { root, backdrop, onClose: opts.onClose, keys }
   requestAnimationFrame(() => {

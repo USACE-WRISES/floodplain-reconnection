@@ -1,7 +1,8 @@
 // What the Report step downloads: the shortlist as CSV and GeoJSON (the hand-off to a finer screen,
 // such as FluvialGeomorph, and to GIS), every reach of the study area as CSV, a printable summary,
-// and the saved screening (inputs and decisions; results are recomputed on Open).
+// and the saved screening (inputs, decisions and cross-section edits; results are recomputed on Open).
 import { latOf, lonOf, Q_UNSAMPLED, WHY, huc12Text, reachId } from '../data/units'
+import type { Edits, ReachEdit } from '../screen/edits'
 import { refOf, rowOf, type Network } from '../screen/model'
 import { flagTexts, FT_PER_M, MI_PER_M, QUALITY_LABEL, SQMI_PER_SQKM } from '../screen/format'
 import { STAGE, type Criteria, type ScreenResult, type Site } from '../screen/screen'
@@ -20,6 +21,8 @@ export interface ReportContext {
   decisions: Map<string, Decision>
   net: Network
   masks: Uint8Array[]
+  /** the user's cross-section edits (an edited reach is screened on them) */
+  edits: Edits
   made: Date
 }
 
@@ -49,7 +52,12 @@ function siteEnds(net: Network, s: Site): { up: [number, number], dn: [number, n
 const SITE_HEADER = ['rank', 'site_id', 'keep', 'note', 'stream', 'huc12', 'length_ft', 'qualifying_length_ft', 'reaches',
   'gap_reaches', 'bhr_median', 'bhr_min', 'bhr_max', 'reaches_bhr_at_least_2', 'er_median', 'er_min', 'er_max',
   'low_bank_height_ft', 'bankfull_width_ft', 'floodprone_width_ft', 'drainage_area_sqmi', 'slope_percent',
-  'reaches_use_with_caution', 'upstream_lon', 'upstream_lat', 'downstream_lon', 'downstream_lat', 'data_version']
+  'reaches_use_with_caution', 'reaches_edited', 'upstream_lon', 'upstream_lat', 'downstream_lon', 'downstream_lat', 'data_version']
+
+/** The reaches of a site screened on the user's cross-section edits. */
+export function editedReaches(net: Network, s: Site): number {
+  return s.refs.filter((ref) => net.file(ref).edited[rowOf(ref)] > 0).length
+}
 
 function siteRow(ctx: ReportContext, s: Site, rank: number): unknown[] {
   const d = ctx.decisions.get(s.id)
@@ -58,7 +66,7 @@ function siteRow(ctx: ReportContext, s: Site, rank: number): unknown[] {
   return [rank, s.id, d?.keep === false ? 'no' : 'yes', d?.note ?? '', s.name, s.huc12, n0(s.lengthM * FT_PER_M),
     n0(s.passLengthM * FT_PER_M), s.refs.length, gaps, n2(s.bhr), n2(s.bhrLo), n2(s.bhrHi), s.bhrAtCap, n2(s.er), n2(s.erLo),
     n2(s.erHi), n1(s.lbhM * FT_PER_M), n1(s.bfwM * FT_PER_M), n1(s.fpwM * FT_PER_M), n2(s.daSqkm * SQMI_PER_SQKM),
-    Number.isFinite(s.slope) ? (s.slope * 100).toFixed(3) : '', s.caution, ...ends.up, ...ends.dn, ctx.dataVersion]
+    Number.isFinite(s.slope) ? (s.slope * 100).toFixed(3) : '', s.caution, editedReaches(ctx.net, s), ...ends.up, ...ends.dn, ctx.dataVersion]
 }
 
 export function shortlistCsv(ctx: ReportContext): string {
@@ -96,7 +104,8 @@ export function reachesCsv(ctx: ReportContext): string {
   const header = ['reach_id', 'site_id', 'screen_result', 'stream', 'huc12', 'length_ft', 'quality', 'bhr_median',
     'bhr_at_least_2', 'bhr_min', 'bhr_max', 'er_median', 'er_min', 'er_max', 'low_bank_height_ft', 'bankfull_depth_ft',
     'bankfull_width_ft', 'floodprone_width_ft', 'drainage_area_sqmi', 'slope_percent', 'sections', 'sections_measured',
-    'dem_m', 'flags', 'region', 'data_version']
+    'dem_m', 'flags', 'values_from', 'sections_edited', 'grid_bhr_median', 'grid_er_median', 'grid_low_bank_height_ft',
+    'region', 'data_version']
   const rows: unknown[][] = []
   ctx.net.files.forEach((f, fi) => {
     const m = ctx.masks[fi]
@@ -105,6 +114,9 @@ export function reachesCsv(ctx: ReportContext): string {
       const ref = refOf(fi, r)
       const st = ctx.result.stage[fi][r]
       const hide = f.q[r] >= 2
+      const mine = f.edited[r] > 0
+      const g = ctx.edits.grid(f, r)
+      const gridHide = g.q >= 2
       rows.push([reachId(f, r), inSite.get(ref) ?? '', STAGE_TEXT[st] ?? '', f.name[r], huc12Text(f, r),
         n0(f.lenM[r] * FT_PER_M), QUALITY_LABEL[f.q[r]], hide ? '' : n2(f.bhr[r] / 100), f.why[r] & WHY.atCap ? 'yes' : 'no',
         hide ? '' : n2(f.bhrLo[r] / 100), hide ? '' : n2(f.bhrHi[r] / 100), hide ? '' : n2(f.er[r] / 100),
@@ -112,10 +124,35 @@ export function reachesCsv(ctx: ReportContext): string {
         hide ? '' : n1((f.bfd[r] / 100) * FT_PER_M), hide ? '' : n1((f.bfw[r] / 10) * FT_PER_M),
         hide ? '' : n1((f.fpw[r] / 10) * FT_PER_M), n2(f.da[r] * SQMI_PER_SQKM),
         Number.isFinite(f.slope[r]) ? (f.slope[r] * 100).toFixed(3) : '', f.n[r], f.nOk[r], f.res[r] || '',
-        f.q[r] === Q_UNSAMPLED ? '' : flagTexts(f, r).join(' '), f.vpu[r], ctx.dataVersion])
+        f.q[r] === Q_UNSAMPLED ? '' : flagTexts(f, r).join(' '), mine ? 'your cross-section edits' : 'grid', f.edited[r],
+        gridHide ? '' : n2(g.bhr / 100), gridHide ? '' : n2(g.er / 100), gridHide ? '' : n1((g.lbh / 100) * FT_PER_M),
+        f.vpu[r], ctx.dataVersion])
     }
   })
   return csv(header, rows)
+}
+
+/** The printable summary's table of the reaches screened on the user's cross-section edits. */
+function editsTable(ctx: ReportContext): string {
+  const rows: string[] = []
+  ctx.net.files.forEach((f) => {
+    for (let r = 0; r < f.rows; r++) {
+      if (!f.edited[r]) continue
+      const g = ctx.edits.grid(f, r)
+      const sections = ctx.edits.of(f, r)?.sections ?? []
+      const heights = sections.map((s) => `${(s.bfM * FT_PER_M).toFixed(2)} / ${(s.lbM * FT_PER_M).toFixed(2)}`).join('; ')
+      rows.push(`<tr><td>${esc(f.name[r] || 'Unnamed stream')}<div class="id">${esc(reachId(f, r))}</div></td>
+        <td class="n">${f.edited[r]} of ${f.n[r]}</td><td>${esc(heights)}</td>
+        <td class="n">${g.q >= 2 ? 'n/a' : `${g.why & WHY.atCap ? '&ge;' : ''}${n2(g.bhr / 100)}`}</td><td class="n">${n2(f.bhr[r] / 100)}</td>
+        <td class="n">${g.q >= 2 ? 'n/a' : n2(g.er / 100)}</td><td class="n">${n2(f.er[r] / 100)}</td></tr>`)
+    }
+  })
+  if (!rows.length) return ''
+  return `<h2>Edited cross-sections (${rows.length} reach${rows.length === 1 ? '' : 'es'})</h2>
+<table><thead><tr><th>Reach</th><th class="n">Sections edited</th><th>Bankfull depth / low-bank height (ft)</th>
+<th class="n">Grid BHR</th><th class="n">Your BHR</th><th class="n">Grid ER</th><th class="n">Your ER</th></tr></thead><tbody>${rows.join('')}</tbody></table>
+<p class="note">An edited reach is screened on its edited sections (their median when several), measured at the heights set on each section's
+3DEP profile. Its flags from the grid no longer apply.</p>`
 }
 
 /** The printable summary: a page of its own (shown in its tab, printed or saved from the browser). */
@@ -124,7 +161,8 @@ export function printable(ctx: ReportContext): string {
   const funnel = ctx.result.funnel.map((f) => `<tr><td>${esc(f.label)}</td><td class="n">${f.reaches.toLocaleString('en-US')}</td><td class="n">${(f.lengthM * MI_PER_M).toFixed(1)}</td></tr>`).join('')
   const sites = ctx.ranked.map((s, i) => {
     const d = ctx.decisions.get(s.id)
-    return `<tr${d?.keep === false ? ' class="drop"' : ''}><td class="n">${i + 1}</td><td>${esc(s.name || 'Unnamed stream')}<div class="id">${esc(s.id)}</div></td>
+    const edited = editedReaches(ctx.net, s)
+    return `<tr${d?.keep === false ? ' class="drop"' : ''}><td class="n">${i + 1}</td><td>${esc(s.name || 'Unnamed stream')}<div class="id">${esc(s.id)}${edited ? `, ${edited} reach${edited === 1 ? '' : 'es'} edited` : ''}</div></td>
       <td class="n">${Math.round(s.lengthM * FT_PER_M).toLocaleString('en-US')}</td><td class="n">${n2(s.bhr)}${s.bhrAtCap ? '*' : ''}</td>
       <td class="n">${n2(s.er)}</td><td class="n">${n1(s.lbhM * FT_PER_M)}</td><td class="n">${n2(s.daSqkm * SQMI_PER_SQKM)}</td>
       <td>${d?.keep === false ? 'Dropped' : 'Kept'}</td><td>${esc(d?.note ?? '')}</td></tr>`
@@ -150,12 +188,15 @@ tr.drop td { color: #8a94a6; } .id { font-size: 11px; color: #8a94a6; } ul { pad
 <table><thead><tr><th class="n">#</th><th>Stream</th><th class="n">Length (ft)</th><th class="n">BHR</th><th class="n">ER</th><th class="n">Low bank (ft)</th><th class="n">Drains (sq mi)</th><th>Decision</th><th>Note</th></tr></thead>
 <tbody>${sites || '<tr><td colspan="9">No sites meet the criteria.</td></tr>'}</tbody></table>
 <p class="note">BHR and ER are site medians of reach medians. * a reach reads "at least 2.00". Data version ${esc(ctx.dataVersion)}.</p>
+${editsTable(ctx)}
 </body></html>`
 }
 
+/** A saved screening. Version 2 adds the cross-section edits, with the numbers each edited section gives,
+ * so a screening opens with its edits in place and no elevation pulls; version 1 files still open. */
 export interface SavedScreening {
   format: 'fpr-screening'
-  version: 1
+  version: 1 | 2
   app_version: string
   data_version: string
   saved_at: string
@@ -165,11 +206,14 @@ export interface SavedScreening {
   sort: string
   sub: string
   decisions: Record<string, Decision>
+  /** by reach id (version 2) */
+  edits?: Record<string, ReachEdit>
 }
 
 export function readSaved(text: string): SavedScreening {
   const v = JSON.parse(text)
-  if (v?.format !== 'fpr-screening' || v?.version !== 1) throw new Error('This is not a screening saved by this tool.')
+  if (v?.format !== 'fpr-screening' || (v?.version !== 1 && v?.version !== 2)) throw new Error('This is not a screening saved by this tool.')
   if (!v.area || !v.criteria) throw new Error('The file is missing its study area or criteria.')
+  if (v.edits !== undefined && (typeof v.edits !== 'object' || v.edits === null || Array.isArray(v.edits))) throw new Error('The file\'s cross-section edits are not readable.')
   return v as SavedScreening
 }

@@ -1,7 +1,7 @@
 {
   "name": "floodplain-reconnection-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "The Floodplain Reconnection Decision Tool as a static web app: Step 1 screens stream reaches from the national cross-section grid.",
   "scripts": {
@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "geotiff": "3.0.5",
     "hyparquet": "1.31.3",
     "hyparquet-compressors": "1.1.2",
     "leaflet": "1.9.4",

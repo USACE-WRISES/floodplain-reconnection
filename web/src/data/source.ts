@@ -55,8 +55,9 @@ export interface WebManifest {
  * 1.65 Mbps in two page loads on the same fast connection, so only the coarse rating is used). */
 export const WHOLE = 12 * 1024 * 1024
 const WHOLE_SLOW = 256 * 1024
-/** Files a view reads a few pages of: never read whole (STAF's stored cross-sections, tens of MB). */
-const SPARSE = /(^|\/)xs-[^/]+-median\.parquet$/
+/** Files a view reads a few pages of: never read whole. STAF's cross-section files (the numbers, the
+ * sections and the stored profiles, 5 to 260 MB a region): a reach needs a few of their pages. */
+const SPARSE = /(^|\/)xs-[^/]+\.parquet$/
 
 /** The largest file to read whole on this connection (see WHOLE). */
 export function wholeSize(): number {

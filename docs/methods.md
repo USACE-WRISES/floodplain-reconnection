@@ -67,6 +67,28 @@ its passing reaches' values.
 
 There is no composite score. The shortlist is ranked by one value the user picks (length by default).
 
+## The user's cross-section edits
+
+A reach's popup shows the sections it was cut from, each with its geometry and ratios beside the reach
+medians. The grid stores one exact elevation profile per stream line; the app draws it at once, and
+pulls any other section again from USGS 3DEP tiles only when the user asks, sampled exactly as the grid
+sampled it (checked against the section's stored checksum). On a drawn section the user can set the
+bankfull depth and the low-bank height, by dragging the lines or typing the heights. The section is then
+measured as the grid measures it, on the same trimmed and thinned profile:
+
+- the flood-prone stage is the bed plus twice the user's bankfull depth, and the ER is the width there
+  over the width at bankfull;
+- the BHR is the user's low-bank height over the user's bankfull depth, with no cap (the grid's cap at
+  2.00 is a limit of its bank detector, not of a bank placed by eye).
+
+A reach the user edits is screened on its edited sections only, their median when several, by the same
+rules as the grid's medians. Its tier keeps only the flags that still apply to heights set by the user:
+"not enough data" for a ratio outside its physical range, and "use with caution" when the median ER
+section's flood-prone width runs off the profile or the profile is a 3 m or 10 m elevation model.
+Clearing the edits returns the grid's values. The edits, with the numbers they give, are saved with the
+screening, marked in the reaches CSV (`values_from`, beside the grid's medians), the shortlist
+(`reaches_edited`) and the printable summary.
+
 ## The field check
 
 At 1,340 EPA National Rivers and Streams Assessment sites in eastern and central regions (pre-registered
@@ -86,7 +108,9 @@ flood-prone width. Condition classes stay off until they pass a field check set 
   The values need a field check before any reach is ruled out there.
 - In urban watersheds most reaches can read as incised; the ratios then rank less well, and a finer
   screen or field review carries more of the weight.
-- One profile per stream line is stored for the cross-section card; other sections are not drawn.
+- The grid stores one profile per stream line; other sections are drawn only once pulled from USGS 3DEP,
+  which takes a few seconds and the USGS tile host.
+- Cross-sections show only where STAF's data host carries the grid's files for the region.
 
 ## Planned
 
