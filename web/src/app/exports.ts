@@ -186,7 +186,7 @@ tr.drop td { color: #8a94a6; } .id { font-size: 11px; color: #8a94a6; } ul { pad
 <tr><td><b>Candidate sites</b></td><td class="n"><b>${ctx.result.sites.length}</b></td><td class="n">${(ctx.result.sites.reduce((a, s) => a + s.lengthM, 0) * MI_PER_M).toFixed(1)}</td></tr></tbody></table>
 <h2>Shortlist (${kept.length} kept of ${ctx.ranked.length})</h2>
 <table><thead><tr><th class="n">#</th><th>Stream</th><th class="n">Length (ft)</th><th class="n">BHR</th><th class="n">ER</th><th class="n">Low bank (ft)</th><th class="n">Drains (sq mi)</th><th>Decision</th><th>Note</th></tr></thead>
-<tbody>${sites || '<tr><td colspan="9">No sites meet the criteria.</td></tr>'}</tbody></table>
+<tbody>${sites || '<tr><td colspan="9">No candidate sites.</td></tr>'}</tbody></table>
 <p class="note">BHR and ER are site medians of reach medians. * a reach reads "at least 2.00". Data version ${esc(ctx.dataVersion)}.</p>
 ${editsTable(ctx)}
 </body></html>`

@@ -39,9 +39,11 @@ export function showHelp(): void {
     reaches you want. In Reaches, hold Shift and drag to add every reach in a box, as many boxes as you like.</p>
     <h5>2. Screen</h5>
     <p>Set the drainage area, bank height ratio and entrenchment ratio a reach needs. Beside each box is the number
-    of reaches left after it, and the card on top counts the candidate sites. Empty a box to turn that criterion
-    off. <b>More settings</b> holds the site length, the gaps a site can span, the quality filters, and
-    <b>Reset to starting values</b>. The starting values are placeholders for the project team to set.</p>
+    of reaches left after it. The last row joins the passing reaches into sites and sets the shortest one, and the
+    card on top counts the candidate sites your study reaches make. Empty a box to turn that criterion off.
+    <b>More settings</b> holds the gaps a site can span, the largest drainage area, the quality filters, and
+    <b>Reset to starting values</b>. Point at an <b>i</b> for what a setting does. The starting values are
+    placeholders for the project team to set.</p>
     <h5>3. Shortlist</h5>
     <p>A candidate site is a run of reaches that meet the criteria along a stream's main stem. A tributary starts a
     site of its own. Rank the sites, keep or drop each one, add notes, and open a site for its reach by reach values
@@ -61,7 +63,8 @@ export function showHelp(): void {
       <li>Point at a reach for its values. Click it for its cross-sections and details.</li>
       <li>The legend's <b>Color by</b> buttons color the reaches by bank height ratio (BHR), entrenchment ratio
       (ER), or the candidate sites (Sites).</li>
-      <li>Dashed reaches carry a caution. Gray reaches have no data (BHR, ER) or are not in a site (Sites).</li>
+      <li>Dashed reaches carry a caution. Gray reaches have no data (BHR, ER) or were screened out (Sites); point at
+      one to see why.</li>
     </ul>
     <p><a href="#" data-open-methods>Methods and limits</a></p>`)
 }

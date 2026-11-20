@@ -5,6 +5,10 @@
 - A whole HUC10 or HUC8 shows as one chip, in place of the Add whole buttons.
 - Switching Watersheds, Upstream and Reaches no longer lags.
 - Reaches draw faster; the white edge starts at zoom 12.
+- Screen and Shortlist say how many study reaches were screened out.
+- Sites view: screened-out reaches draw bolder; hovering one says why.
+- Screen: a last row counts the sites the passing reaches make.
+- Info icons explain the shortest site and the settings under More settings.
 
 ## v0.3.0 (2026-11-19)
 - Reaches: click reaches, or hold Shift and drag boxes, to screen known sites.

@@ -62,8 +62,19 @@ const COLORINGS: { key: ColorBy, label: string, title: string }[] = [
   { key: 'match', label: 'Sites', title: 'Candidate sites and the criteria' },
 ]
 
-/** The criteria under More settings (the Screen step's other three show at all times). */
-const MORE_KEYS = ['minSiteFt', 'gapReaches', 'daMaxSqmi', 'includeCaution', 'countCapped', 'skipCanals'] as const
+/** The criteria under More settings (the Screen step's other four, the shortest site among them, show at
+ * all times). */
+const MORE_KEYS = ['gapReaches', 'daMaxSqmi', 'includeCaution', 'countCapped', 'skipCanals'] as const
+
+/** The settings' info icons (the owner, 2026-11-20): what each setting does, in a sentence or two. */
+const TIPS: Record<'minSiteFt' | (typeof MORE_KEYS)[number], string> = {
+  minSiteFt: 'Reaches that pass and touch along a stream join into one site; a tributary starts its own. A run shorter than this is not a site.',
+  gapReaches: 'A site may run across this many reaches in a row that miss a criterion or lack data. 0 allows no gaps.',
+  daMaxSqmi: 'Leave out reaches that drain more than this, such as large rivers. Empty means no limit.',
+  includeCaution: 'Caution marks less certain values: a regional curve used outside its range, banks found only at the highest ground, 3 or 4 sections measured, a flood-prone width that runs off the profile, or a 3 m or 10 m elevation model. Uncheck to leave these reaches out.',
+  countCapped: 'Where no bank is found below twice the bankfull depth, the method stops BHR at 2.00, so the true value is 2.00 or more. Checked, these reaches pass any BHR minimum up to 2.00 and count in the BHR row. Uncheck to keep only reaches with a measured BHR.',
+  skipCanals: 'Lines the national hydrography maps as canals or ditches: built channels with no natural floodplain to reconnect. Uncheck to screen them too.',
+}
 
 /** Reaches show for the view from this zoom (the files the view meets load by themselves). */
 const VIEW_ZOOM = 11
@@ -147,6 +158,8 @@ export class App {
   private recomputeFrame = 0
   /** the watershed outlines' update after a switch of the study-area way, at the next frame */
   private picksFrame = 0
+  /** hides the settings' info box (set by wireTips; a redraw of the pane takes its icon away) */
+  private hideTip: () => void = () => {}
   private inputTimer = 0
 
   constructor(params: URLSearchParams, dataBase: string, stafBase: string) {
@@ -175,6 +188,7 @@ export class App {
     this.wireMap()
     this.wireLegend()
     this.wirePane()
+    this.wireTips()
     this.registerDownloads()
     this.renderPane()
     this.renderLegend()
@@ -343,7 +357,8 @@ export class App {
     }
     add('out', { color: '#7d8ba1', width: 1.1, alpha: 0.4, z: 1 })
     add('nod', { color: NO_DATA, width: 1.4, z: 3 })
-    // the colored reaches are strong (a white edge, wider zoomed in: unitLayer.ts); the grays recede
+    // the colored reaches are strong (a white edge, wider zoomed in: unitLayer.ts), and so are the study
+    // reaches screened out (the owner, 2026-11-20: a picked reach must show); the other grays recede
     for (let b = 0; b < BINS; b++) {
       add(`s${b}`, { color: binColor(b), width: 2.6, z: 6, strong: true })
       add(`d${b}`, { color: binColor(b), width: 2.4, dash: [5, 4], z: 5, strong: true })
@@ -351,7 +366,7 @@ export class App {
     add('cap', { color: AT_CAP, width: 2.6, z: 6, strong: true })
     add('capd', { color: AT_CAP, width: 2.4, dash: [5, 4], z: 5, strong: true })
     add('m-site', { color: MATCH.site, width: 3.4, z: 9, strong: true })
-    add('m-other', { color: MATCH.other, width: 1.8, z: 4 })
+    add('m-other', { color: MATCH.other, width: 2.6, z: 4, strong: true })
     this.styleTable = t
     this.styleIds = ids
   }
@@ -440,7 +455,7 @@ export class App {
     if (by === 'match') {
       html = `<div class="fpr-legend-title">Candidate sites</div>
         ${sw(MATCH.site, 'Candidate site')}
-        ${sw(MATCH.other, 'Not a site')}`
+        ${sw(MATCH.other, 'Screened out')}`
     } else {
       const spec: RampSpec = RAMPS[by]
       html = `<div class="fpr-legend-title">${esc(spec.title)}</div>
@@ -570,7 +585,20 @@ export class App {
       ${values}
       <div>Drains <b>${sqmi(f.da[r])} sq mi</b>, ${ft(f.lenM[r])} ft long</div>
       ${f.edited[r] ? `<div class="f">Screened on your edits of ${f.edited[r]} cross-section${f.edited[r] === 1 ? '' : 's'}</div>` : ''}
-      ${site !== undefined ? `<div>Candidate site <b>#${site + 1}</b>${this.isGap(ref) ? ', as a gap' : ''}</div>` : this.inShortRun(ref) ? `<div>${esc(this.shortRunText())}</div>` : ''}`
+      ${site !== undefined ? `<div>Candidate site <b>#${site + 1}</b>${this.isGap(ref) ? ', as a gap' : ''}</div>`
+        : this.inShortRun(ref) ? `<div>${esc(this.shortRunText())}</div>` : this.screenedText(ref) ? `<div>${esc(this.screenedText(ref)!)}</div>` : ''}`
+  }
+
+  /** Why a study reach in no candidate site was screened out, from where the screen stopped it (null
+   * outside the study area, in a site, in a short run, which has its own line, and for a line not
+   * sampled, whose card already says so). */
+  private screenedText(ref: Ref): string | null {
+    if (this.siteOf.get(ref) !== undefined) return null
+    const st = this.result?.stage[fileOf(ref)]?.[rowOf(ref)]
+    if (st === undefined || st === STAGE.outside || st === STAGE.unsampled || st === STAGE.pass) return null
+    if (st === STAGE.canal) return 'Screened out: a canal or ditch'
+    if (st === STAGE.unmeasured) return this.net.file(ref).q[rowOf(ref)] === Q_CAUTION ? 'Screened out: marked use with caution' : 'Screened out: not enough data'
+    return `Screened out by ${st === STAGE.da ? 'drainage area' : st === STAGE.bhr ? 'bank height ratio' : 'entrenchment ratio'}`
   }
 
   /** A reach in a candidate site that misses a criterion: a gap the site bridges. The map draws it as
@@ -1053,6 +1081,7 @@ export class App {
   }
 
   renderPane(): void {
+    this.hideTip()
     if (this.step !== 1) {
       this.pane.innerHTML = plannedPane(this.step)
       return
@@ -1067,6 +1096,69 @@ export class App {
       if (input && menu) wireSearch(input, menu, (p) => this.map.setView([p.lat, p.lon], Math.max(p.zoom, this.mode === 'huc' ? 11 : 12)))
     }
     this.refreshPane()
+  }
+
+  /** The settings' info icons (the owner, 2026-11-20): one box, by the icon, shown on hover or focus and
+   * on a click or tap (phones), hidden on leave, blur, Escape, a click elsewhere or a scroll. It lives on
+   * the page, not in the pane, so the pane's scrolling never clips it. */
+  private wireTips(): void {
+    const tipbox = document.createElement('div')
+    tipbox.className = 'fpr-tipbox'
+    tipbox.id = 'fpr-tipbox'
+    tipbox.setAttribute('role', 'tooltip')
+    tipbox.hidden = true
+    document.body.appendChild(tipbox)
+    let at: HTMLElement | null = null
+    const hide = (): void => {
+      if (!at) return
+      at.removeAttribute('aria-describedby')
+      at = null
+      tipbox.hidden = true
+    }
+    const show = (b: HTMLElement): void => {
+      if (at === b) return
+      hide()
+      at = b
+      b.setAttribute('aria-describedby', 'fpr-tipbox')
+      tipbox.textContent = TIPS[b.dataset.tip as keyof typeof TIPS] ?? ''
+      tipbox.hidden = false
+      // under the icon, or over it where the window ends; never past either side
+      const r = b.getBoundingClientRect()
+      const left = Math.max(8, Math.min(r.left - 10, innerWidth - tipbox.offsetWidth - 8))
+      const below = r.bottom + 6
+      const top = below + tipbox.offsetHeight > innerHeight - 8 ? Math.max(8, r.top - tipbox.offsetHeight - 6) : below
+      tipbox.style.left = `${Math.round(left)}px`
+      tipbox.style.top = `${Math.round(top)}px`
+    }
+    const tipOf = (e: Event) => (e.target instanceof Element ? e.target.closest<HTMLElement>('.fpr-info') : null)
+    this.pane.addEventListener('mouseover', (e) => {
+      const b = tipOf(e)
+      if (b) show(b)
+    })
+    this.pane.addEventListener('mouseout', (e) => {
+      const b = tipOf(e)
+      if (b && !(e.relatedTarget instanceof Node && b.contains(e.relatedTarget)) && document.activeElement !== b) hide()
+    })
+    this.pane.addEventListener('focusin', (e) => {
+      const b = tipOf(e)
+      if (b) show(b)
+    })
+    this.pane.addEventListener('focusout', (e) => {
+      if (tipOf(e)) hide()
+    })
+    // a tap on a phone sends no hover: the click shows the box, and a click anywhere else hides it
+    document.addEventListener('click', (e) => {
+      const b = tipOf(e)
+      if (b) {
+        e.preventDefault()
+        show(b)
+      } else hide()
+    }, true)
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') hide()
+    })
+    this.pane.addEventListener('scroll', hide, true)
+    this.hideTip = hide
   }
 
   /** The parts of the pane that change without a full redraw (inputs keep their focus). */
@@ -1095,6 +1187,13 @@ export class App {
           n.title = row.reaches === null ? '' : `${count(row.reaches)} reach${row.reaches === 1 ? '' : 'es'}, ${mi(row.lengthM)} mi`
         }
         this.pane.querySelector(`#fpr-row-${row.key}`)?.classList.toggle('off', row.off)
+      }
+      // the last row: the sites the passing reaches make
+      const sites = this.pane.querySelector<HTMLElement>('#fpr-left-sites')
+      if (sites) {
+        const n = this.ranked.length
+        sites.innerHTML = this.result ? `${count(n)}<span class="fpr-left-unit"> site${n === 1 ? '' : 's'}</span>` : ''
+        sites.title = this.result ? `${count(n)} candidate site${n === 1 ? '' : 's'}, ${mi(this.ranked.reduce((a, s) => a + s.lengthM, 0))} mi` : ''
       }
       set('fpr-hist-bhr', this.histogram('bhr'))
       set('fpr-hist-er', this.histogram('er'))
@@ -1211,7 +1310,7 @@ export class App {
     const partial = this.areaHuc8s().filter((h) => this.idx?.huc8[h]?.status === 'partial')
     const missing = this.mode === 'huc' ? hucFiles([...this.codes]).filter((h) => !this.idx?.huc8[h]) : []
     return `<div class="fpr-area-line">
-        <span><b>${count(st.reaches)}</b> reach${st.reaches === 1 ? '' : 'es'}, ${mi(st.m)} mi</span>
+        <span><b>${count(st.reaches)}</b> study reach${st.reaches === 1 ? '' : 'es'}, ${mi(st.m)} mi</span>
         <button type="button" class="btn btn-link btn-sm p-0" data-act="fit">Zoom to area</button>
       </div>
       ${partial.length ? '<div class="fpr-note warn">Part of this area is in grid regions not built yet.</div>' : ''}
@@ -1228,13 +1327,17 @@ export class App {
 
   // the Screen sub-step
 
-  /** The result on top, the three criteria most teams set with the reaches each leaves, and the rest
-   * under More settings. The numbers are filled in by refreshPane, so typing never redraws a box. */
+  /** The result on top, the three criteria most teams set with the reaches each leaves, the sites the
+   * passing reaches make (the owner, 2026-11-20: 291 reaches left, then 46 sites, read as a puzzle until
+   * the last row said so), and the rest under More settings, each with an info icon. The numbers are
+   * filled in by refreshPane, so typing never redraws a box. */
   private screenPane(): string {
     const c = this.criteria
     const num = (key: keyof Criteria, v: number | null, step: string, min: string, placeholder: string, describedBy = '') =>
       `<input type="number" class="form-control" id="crit-${key}" data-crit="${key}" value="${v === null ? '' : v}" step="${step}" min="${min}" placeholder="${placeholder}"${describedBy ? ` aria-describedby="${describedBy}"` : ''}>`
     const box = (key: keyof Criteria, on: boolean) => `<input type="checkbox" class="form-check-input" data-crit="${key}" id="crit-${key}"${on ? ' checked' : ''}>`
+    // a setting's words and its info icon (the full text also inside the icon, for a screen reader)
+    const named = (key: keyof typeof TIPS, text: string) => `<span class="fpr-crit-label"><label for="crit-${key}">${esc(text)}</label><button type="button" class="fpr-info" data-tip="${key}"><span aria-hidden="true">i</span><span class="visually-hidden">${esc(TIPS[key])}</span></button></span>`
     // an empty box turns its criterion off; the count beside it is what is left after it
     const row = (key: keyof Criteria, label: string, v: number | null, step: string, min: string, unit: string, left: 'da' | 'bhr' | 'er') =>
       `<div class="fpr-crit" id="fpr-row-${left}"><div class="fpr-crit-row">
@@ -1247,14 +1350,15 @@ export class App {
       ${row('daMinSqmi', 'Drainage area at least', c.daMinSqmi, '0.5', '0', 'sq mi', 'da')}
       ${row('bhrMin', 'Bank height ratio at least', c.bhrMin, '0.05', '0', '', 'bhr')}
       ${row('erMin', 'Entrenchment ratio at least', c.erMin, '0.1', '1', '', 'er')}
+      <div class="fpr-crit" id="fpr-row-sites"><div class="fpr-crit-row">
+        ${named('minSiteFt', 'Sites of at least')}${num('minSiteFt', c.minSiteFt, '100', '0', '0', 'fpr-left-sites')}<span class="fpr-unit">ft</span><b class="fpr-left" id="fpr-left-sites"></b></div></div>
       <details class="fpr-more" id="fpr-more"${this.moreOpen ? ' open' : ''}>
         <summary>More settings <span class="fpr-more-n" id="fpr-more-n"></span></summary>
-        ${line(`<label for="crit-minSiteFt">Shortest site</label>${num('minSiteFt', c.minSiteFt, '100', '0', '0')}<span class="fpr-unit">ft</span>`)}
-        ${line(`<label for="crit-gapReaches">Allow gaps of up to</label>${num('gapReaches', c.gapReaches, '1', '0', '0')}<span class="fpr-unit" id="fpr-gap-unit">reach</span>`)}
-        ${line(`<label for="crit-daMaxSqmi">Drainage area at most</label>${num('daMaxSqmi', c.daMaxSqmi, '10', '0', 'none')}<span class="fpr-unit">sq mi</span>`)}
-        ${line(`${box('includeCaution', c.includeCaution)}<label for="crit-includeCaution">Include reaches marked "use with caution"</label>`)}
-        ${line(`${box('countCapped', c.countCapped)}<label for="crit-countCapped">Count reaches whose BHR reads "at least 2.00"</label>`)}
-        ${line(`${box('skipCanals', c.skipCanals)}<label for="crit-skipCanals">Leave out canals and ditches</label>`)}
+        ${line(`${named('gapReaches', 'Allow gaps of up to')}${num('gapReaches', c.gapReaches, '1', '0', '0')}<span class="fpr-unit" id="fpr-gap-unit">reach</span>`)}
+        ${line(`${named('daMaxSqmi', 'Drainage area at most')}${num('daMaxSqmi', c.daMaxSqmi, '10', '0', 'none')}<span class="fpr-unit">sq mi</span>`)}
+        ${line(`${box('includeCaution', c.includeCaution)}${named('includeCaution', 'Include reaches marked "use with caution"')}`)}
+        ${line(`${box('countCapped', c.countCapped)}${named('countCapped', 'Count reaches whose BHR reads "at least 2.00"')}`)}
+        ${line(`${box('skipCanals', c.skipCanals)}${named('skipCanals', 'Leave out canals and ditches')}`)}
         <div class="fpr-more-links">
           <button type="button" class="btn btn-link btn-sm p-0" data-act="reset-criteria">Reset to starting values</button>
           <button type="button" class="btn btn-link btn-sm p-0" data-act="methods">Methods and limits</button>
@@ -1338,22 +1442,37 @@ export class App {
     return `<svg class="fpr-hist" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(spec.title)} of the measured reaches">${bars}${line}${labels}</svg>`
   }
 
-  /** The Screen step's result: the candidate sites, or why there are none. */
+  /** The Screen step's result: the candidate sites and the study reaches they come from, or why the
+   * study reaches make none (the owner, 2026-11-20: study reaches go in, candidate sites come out, the
+   * rest are screened out). */
   private resultHtml(): string {
     if (!this.result) return '<div class="fpr-result-sub">Choose a study area first.</div>'
     const n = this.ranked.length
+    const { study, measured } = this.studyCounts()
     if (!n) {
-      const pass = this.result.pass
-      const why = pass
-        ? `${count(pass)} ${pass === 1 ? 'reach passes' : 'reaches pass'}, but none in a run of ${count(this.criteria.minSiteFt)} ft. Lower the shortest site under More settings.`
-        : 'No reach meets every criterion. Lower a minimum or empty a box.'
+      const hint = !study ? '' : this.result.pass ? ' Lower the shortest site.' : ' Lower a minimum or empty a box.'
       return `<div class="fpr-result-head"><span class="fpr-result-n">No candidate sites</span></div>
-        <div class="fpr-result-sub">${esc(why)}</div>`
+        <div class="fpr-result-sub">${esc(this.noSiteReason() + hint)}</div>`
     }
-    const measured = this.result.funnel.find((s) => s.key === 'measured')?.reaches ?? 0
     const total = this.ranked.reduce((a, s) => a + s.lengthM, 0)
+    const from = `from ${count(study)} study reach${study === 1 ? '' : 'es'}${measured === study ? '' : `, ${count(measured)} measured`}`
     return `<div class="fpr-result-head"><span class="fpr-result-n">${count(n)} candidate site${n === 1 ? '' : 's'}</span><span class="fpr-result-mi">${mi(total)} mi</span></div>
-      <div class="fpr-result-sub">from ${count(measured)} measured reach${measured === 1 ? '' : 'es'}</div>`
+      <div class="fpr-result-sub">${esc(from)}</div>`
+  }
+
+  /** The study reaches the screen starts from (the funnel's first step), and how many were measured. */
+  private studyCounts(): { study: number, measured: number } {
+    const funnel = this.result?.funnel ?? []
+    return { study: funnel.find((s) => s.key === 'reaches')?.reaches ?? 0, measured: funnel.find((s) => s.key === 'measured')?.reaches ?? 0 }
+  }
+
+  /** Why the study reaches make no candidate site, in a sentence (the Screen card and the Shortlist). */
+  private noSiteReason(): string {
+    const { study } = this.studyCounts()
+    const pass = this.result?.pass ?? 0
+    if (!study) return 'The study area has no sampled reaches.'
+    if (pass) return `${count(pass)} of ${count(study)} study reach${study === 1 ? '' : 'es'} ${pass === 1 ? 'passes' : 'pass'}, but none in a run of ${count(this.criteria.minSiteFt)} ft.`
+    return study === 1 ? 'The study reach was screened out.' : `All ${count(study)} study reaches were screened out.`
   }
 
   /** The reaches left after each criterion row, from the funnel (a criterion that is off narrows
@@ -1386,7 +1505,11 @@ export class App {
   private shortHead(): string {
     const kept = this.ranked.filter((s) => this.decisions.get(s.id)?.keep !== false).length
     const total = this.ranked.reduce((a, s) => a + s.lengthM, 0)
-    if (!this.ranked.length) return '<p>No sites meet the criteria. Loosen a criterion in the Screen step.</p>'
+    if (!this.ranked.length) {
+      const why = this.noSiteReason()
+      const hint = this.result?.pass ? 'Lower the shortest site in the Screen step.' : 'Loosen a criterion in the Screen step.'
+      return `<p>No candidate sites: ${esc(why.charAt(0).toLowerCase() + why.slice(1))} ${hint}</p>`
+    }
     const n = this.ranked.length
     return `<p><b>${count(n)}</b> candidate site${n === 1 ? '' : 's'}, ${mi(total)} mi in all. ${count(kept)} kept.</p><p>Click a site to see it on the map.</p>`
   }
@@ -1619,7 +1742,8 @@ export class App {
         ${q === Q_CAUTION ? '<span class="f">Use with caution</span>' : ''}`
     return `<div class="fpr-reach-vals">${vals}<span>Drains <b>${sqmi(f.da[r])} sq mi</b></span><span><b>${ft(f.lenM[r])} ft</b> long</span></div>
       ${site !== undefined ? `<p>In candidate site <b>#${site + 1}</b>${this.isGap(ref) ? ', as a gap' : ''}. <a href="#" data-site="${esc(this.ranked[site].id)}">Open the site</a></p>`
-        : this.inShortRun(ref) ? `<p>${esc(this.shortRunText())}, so it is not a candidate site.</p>` : ''}
+        : this.inShortRun(ref) ? `<p>${esc(this.shortRunText())}, so it is not a candidate site.</p>`
+          : this.screenedText(ref) ? `<p>${esc(this.screenedText(ref)!)}.</p>` : ''}
       ${f.edited[r] ? `<p>Screened on your edits (${f.edited[r]} of ${f.n[r]} sections). <a href="#" data-reach-clear>Clear my edits</a></p>` : ''}`
   }
 

@@ -219,13 +219,26 @@ a { color: var(--fpr-accent); }
 .fpr-crit-line label { flex: 1; margin: 0; line-height: 1.3; }
 .fpr-crit input[type="number"] { width: 78px; font-size: 12.5px; padding: 2px 6px; text-align: right; }
 .fpr-crit input[type="checkbox"] { margin: 0; flex: none; }
-.fpr-crit-row { display: grid; grid-template-columns: minmax(0, 1fr) 64px 32px 42px; gap: 6px; align-items: center; }
+/* the box fits "10000" beside its arrows, the unit "sq mi", the count "123 sites"; the label column still
+   fits "Entrenchment ratio at least" on one line, on a phone too */
+.fpr-crit-row { display: grid; grid-template-columns: minmax(0, 1fr) 70px 30px 48px; gap: 4px; align-items: center; }
 .fpr-crit-row label { margin: 0; line-height: 1.3; }
 .fpr-crit-row input[type="number"] { width: 100%; }
 .fpr-crit-row .fpr-unit { min-width: 0; }
 .fpr-left { text-align: right; font-weight: 600; color: var(--fpr-title); font-variant-numeric: tabular-nums; }
 .fpr-crit.off label, .fpr-crit.off .fpr-left { color: #a7b0bd; }
 .fpr-unit { color: var(--fpr-muted); font-size: 11.5px; min-width: 34px; }
+/* the last row's count reads "46 sites"; a setting's words and its info icon (the owner, 2026-11-20) */
+.fpr-left-unit { font-weight: 400; font-size: 11px; color: var(--fpr-muted); white-space: nowrap; }
+.fpr-left { white-space: nowrap; }
+.fpr-crit-label { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.fpr-crit-line > .fpr-crit-label { flex: 1; }
+.fpr-crit-label label { flex: 0 1 auto; margin: 0; line-height: 1.3; }
+.fpr-info { flex: none; width: 15px; height: 15px; padding: 0; border: 1px solid #b9c3d2; border-radius: 50%; background: #fff;
+  color: var(--fpr-muted); font: italic 700 10px/13px Georgia, 'Times New Roman', serif; cursor: help; }
+.fpr-info:hover, .fpr-info:focus-visible { border-color: var(--fpr-accent); color: var(--fpr-accent); outline: none; }
+.fpr-tipbox { position: fixed; z-index: 1300; max-width: 260px; padding: 7px 9px; border-radius: 6px; background: #1f2a3d;
+  color: #fff; font-size: 12px; line-height: 1.4; box-shadow: 0 4px 14px rgba(0, 0, 0, .25); pointer-events: none; }
 .fpr-more { margin-top: 8px; }
 .fpr-more > summary { list-style: none; display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 5px 0;
   font-size: 12.5px; font-weight: 600; color: var(--fpr-accent); }
