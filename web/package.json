@@ -1,7 +1,7 @@
 {
   "name": "floodplain-reconnection-web",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "description": "The Floodplain Reconnection Decision Tool as a static web app: Step 1 screens stream reaches from the national cross-section grid.",
   "scripts": {

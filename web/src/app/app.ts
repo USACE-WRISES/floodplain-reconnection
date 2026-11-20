@@ -12,6 +12,7 @@ import { AT_CAP, binColor, binOf, BINS, MATCH, NO_DATA, RAMPS, rampColor, rampGr
 import { UnitLayer, type LineStyle } from '../map/unitLayer'
 import { Edits } from '../screen/edits'
 import { bhrText, count, flagTexts, ft, mi, QUALITY_LABEL, ratio, slopeText, sqmi } from '../screen/format'
+import { chipsOf, toggleUnit, unitOf, type Chip, type PickSize } from '../screen/hucs'
 import { fileOf, hucFiles, hucMask, Network, refMask, refOf, rowOf, type Ref } from '../screen/model'
 import { addBox, pickedFiles, picksFromBox, resolvePicks, savedPicks, togglePick, type Picks } from '../screen/picks'
 import { defaultCriteria, presetOf, rankSites, screen, SORTS, STAGE, type Criteria, type ScreenResult, type Site, type SortKey } from '../screen/screen'
@@ -37,6 +38,15 @@ const MODES: { key: Mode, label: string, hint: string }[] = [
   { key: 'walk', label: 'Upstream', hint: 'Click a stream to screen everything upstream of it.' },
   { key: 'reach', label: 'Reaches', hint: 'Click reaches to add or remove them. Hold Shift and drag to add a box of them.' },
 ]
+
+/** Watersheds by size (the owner, 2026-11-20: a switch, in place of the add-a-whole-HUC10 and -HUC8
+ * buttons): what a click on the map picks, and the one line on it. */
+const PICK_SIZES: PickSize[] = [12, 10, 8]
+const HUC_HINT: Record<PickSize, string> = {
+  12: 'Click watersheds on the map to add or remove them.',
+  10: 'Click the map to add or remove a whole HUC10.',
+  8: 'Click the map to add or remove a whole HUC8.',
+}
 
 const SUBS: { key: Sub, label: string }[] = [
   { key: 'area', label: 'Study area' },
@@ -87,7 +97,8 @@ export class App {
   mode: Mode = 'huc'
   /** picked HUC12s */
   codes = new Set<string>()
-  lastPick: string | null = null
+  /** what a click on a watershed picks: the HUC12, or its whole HUC10 or HUC8 (a view setting, not saved) */
+  pickSize: PickSize = 12
   walkFrom: { huc8: string, id: string } | null = null
   /** picked reaches (the Reaches study area) */
   picks: Picks = new Map()
@@ -110,6 +121,8 @@ export class App {
   private huc12Layers = new Map<string, L.GeoJSON>()
   private huc12Loading = new Map<string, Promise<L.GeoJSON | null>>()
   private huc12Names = new Map<string, string>()
+  /** every HUC12 of each HUC4 whose outlines are loaded (the units a click picks, and the chips) */
+  private huc12Codes = new Map<string, string[]>()
   /** The watershed under the pointer while picking: its outline drawn stronger, its name in the cue. */
   private hucHover: string | null = null
   private hucHoverLayer: L.Path | null = null
@@ -721,12 +734,14 @@ export class App {
       job = (this.src.has(logical) ? this.src.bytesOf(logical) : Promise.reject(new Error('no outline')))
         .then((buf) => {
           const data = JSON.parse(new TextDecoder().decode(buf))
+          const codes: string[] = []
           const opts: L.GeoJSONOptions & L.PathOptions = {
             renderer: this.outlines,
             pane: PANES.outlines,
                 style: (feat) => this.huc12Style(String(feat?.properties?.huc12 ?? '')),
             onEachFeature: (feat, l) => {
               const code = String(feat.properties?.huc12 ?? '')
+              codes.push(code)
               this.huc12Names.set(code, String(feat.properties?.name ?? ''))
               // the name goes in the cue, not by the pointer: zoomed in, the pointer is always inside one
               // watershed, and a label there sat beside the reach card wherever the pointer went
@@ -739,6 +754,9 @@ export class App {
           }
           const layer = L.geoJSON(data, opts)
           this.huc12Layers.set(huc4, layer)
+          this.huc12Codes.set(huc4, codes)
+          // the chips group a whole HUC10 or HUC8 once its outlines are here (a screening just opened)
+          if (this.codes.size) this.refreshPane()
           return layer
         })
         .catch(() => null)
@@ -750,10 +768,19 @@ export class App {
 
   private huc12Style(code: string): L.PathOptions {
     const on = this.codes.has(code)
-    const hover = code === this.hucHover
+    const hover = this.inHoverUnit(code)
+    // a whole HUC10 or HUC8 under the pointer is tinted; its inner borders stay as they are
+    const unit = hover && this.pickSize !== 12
     return on
-      ? { color: '#c2410c', weight: hover ? 3.5 : 2, opacity: 0.95, fill: true, fillColor: '#c2410c', fillOpacity: hover ? 0.2 : 0.12 }
-      : { color: '#2f4b7c', weight: hover ? 2.5 : 0.9, opacity: hover ? 0.95 : 0.55, fill: true, fillColor: '#2f4b7c', fillOpacity: hover ? 0.08 : 0.02 }
+      ? { color: '#c2410c', weight: hover && !unit ? 3.5 : 2, opacity: 0.95, fill: true, fillColor: '#c2410c', fillOpacity: hover ? (unit ? 0.26 : 0.2) : 0.12 }
+      : { color: '#2f4b7c', weight: hover ? (unit ? 1.2 : 2.5) : 0.9, opacity: hover ? 0.95 : 0.55, fill: true, fillColor: '#2f4b7c', fillOpacity: hover ? (unit ? 0.14 : 0.08) : 0.02 }
+  }
+
+  /** Whether watershed `code` is in the unit under the pointer (at the HUC12 size, the one under it). */
+  private inHoverUnit(code: string): boolean {
+    const h = this.hucHover
+    if (h === null) return false
+    return this.pickSize === 12 ? code === h : code.startsWith(h.slice(0, this.pickSize))
   }
 
   private setHucHover(code: string | null, layer: L.Path | null): void {
@@ -762,24 +789,68 @@ export class App {
     const beforeCode = this.hucHover
     this.hucHover = code
     this.hucHoverLayer = layer
-    if (before && beforeCode !== null) before.setStyle(this.huc12Style(beforeCode))
-    if (layer && code !== null) {
-      layer.setStyle(this.huc12Style(code))
-      layer.bringToFront()
+    if (this.pickSize === 12) {
+      if (before && beforeCode !== null) before.setStyle(this.huc12Style(beforeCode))
+      if (layer && code !== null) {
+        layer.setStyle(this.huc12Style(code))
+        layer.bringToFront()
+      }
+    } else {
+      // a whole HUC10 or HUC8: its watersheds are restyled when the pointer moves to another unit
+      const was = beforeCode?.slice(0, this.pickSize) ?? null
+      const now = code?.slice(0, this.pickSize) ?? null
+      if (was !== now) {
+        if (was !== null) this.restyleUnit(was)
+        if (now !== null) this.restyleUnit(now)
+      }
     }
     this.updateCue()
+  }
+
+  /** Restyles the HUC12s under a HUC10 or HUC8 code. */
+  private restyleUnit(code: string): void {
+    this.huc12Layers.get(code.slice(0, 4))?.eachLayer((l) => {
+      const c = String((l as L.Polygon & { feature?: GeoJSON.Feature }).feature?.properties?.huc12 ?? '')
+      if (c.startsWith(code)) (l as L.Path).setStyle(this.huc12Style(c))
+    })
   }
 
   private restylePicks(): void {
     for (const layer of this.huc12Layers.values()) layer.setStyle((feat) => this.huc12Style(String(feat?.properties?.huc12 ?? '')))
   }
 
+  /** A click on a watershed: the unit of the pick size under it (the HUC12, or its whole HUC10 or HUC8)
+   * joins the study area, or leaves it when all of it is in already. */
   private togglePick(code: string): void {
     if (!this.pickingOn()) return
-    if (this.codes.has(code)) this.codes.delete(code)
-    else this.codes.add(code)
-    this.lastPick = this.codes.has(code) ? code : this.lastPick === code ? null : this.lastPick
+    toggleUnit(this.codes, this.unitCodes(code))
     this.afterPicks()
+  }
+
+  /** The HUC12s a click on watershed `code` picks at the pick size now. */
+  private unitCodes(code: string): string[] {
+    return unitOf(code, this.pickSize, this.huc12Codes.get(code.slice(0, 4)) ?? [])
+  }
+
+  /** Every HUC12 under a HUC8 or HUC10 code (null while its outlines are not loaded). */
+  private hucsUnder(code: string): string[] | null {
+    const all = this.huc12Codes.get(code.slice(0, 4))
+    return all ? all.filter((c) => c.startsWith(code)) : null
+  }
+
+  /** The pick-size switch: the map's hover and cue follow, and the switch keeps the keyboard's focus. */
+  private setPickSize(size: PickSize): void {
+    if (size === this.pickSize) return
+    this.pickSize = size
+    this.restylePicks()
+    this.updateCue()
+    this.pane.querySelectorAll<HTMLButtonElement>('[data-act="size"]').forEach((b) => {
+      const on = Number(b.dataset.size) === size
+      b.classList.toggle('on', on)
+      b.setAttribute('aria-pressed', String(on))
+    })
+    const hint = this.pane.querySelector('.fpr-mode-hint')
+    if (hint) hint.textContent = HUC_HINT[size]
   }
 
   private afterPicks(): void {
@@ -801,12 +872,6 @@ export class App {
       if (code.startsWith(prefix)) out.push(code)
     })
     return out.sort()
-  }
-
-  private async addWhole(len: 8 | 10): Promise<void> {
-    if (!this.lastPick) return
-    for (const c of await this.expand(this.lastPick.slice(0, len))) this.codes.add(c)
-    this.afterPicks()
   }
 
   /** The map framed on the study area. */
@@ -837,7 +902,6 @@ export class App {
 
   private clearArea(): void {
     this.codes.clear()
-    this.lastPick = null
     this.walkFrom = null
     this.picks.clear()
     this.areaGen++
@@ -857,18 +921,15 @@ export class App {
       const a = act.dataset.act!
       if (a === 'sub') this.goSub(act.dataset.sub as Sub)
       else if (a === 'mode') this.setMode(act.dataset.mode as Mode)
-      else if (a === 'whole10') void this.addWhole(10)
-      else if (a === 'whole8') void this.addWhole(8)
+      else if (a === 'size') this.setPickSize(Number(act.dataset.size) as PickSize)
       else if (a === 'clear') {
         this.clearArea()
         this.touch()
         this.recompute()
         this.renderPane()
       } else if (a === 'unpick') {
-        const code = act.dataset.code!
-        this.codes.delete(code)
-        // "Add whole HUC10" works from the last watershed still picked
-        if (this.lastPick === code) this.lastPick = [...this.codes].pop() ?? null
+        // a chip's x: its HUC12, or every HUC12 of its whole HUC10 or HUC8
+        for (const c of (act.dataset.codes ?? '').split(' ')) this.codes.delete(c)
         this.afterPicks()
       } else if (a === 'fit') this.fitArea()
       else if (a === 'reset-criteria') this.resetCriteria()
@@ -1052,10 +1113,14 @@ export class App {
   /** Where to screen: the three choices, one line on how each works (the map's cue says when to zoom
    * in), what is picked, and the study area in one line. */
   private areaPane(): string {
-    const hint = MODES.find((m) => m.key === this.mode)?.hint ?? ''
+    const hint = this.mode === 'huc' ? HUC_HINT[this.pickSize] : MODES.find((m) => m.key === this.mode)?.hint ?? ''
     return `
       <div class="fpr-search"><input id="fpr-search" class="form-control form-control-sm" type="search" placeholder="Find a place or lat, lon" autocomplete="off" aria-label="Find a place"><div id="fpr-search-menu" class="fpr-ac-menu" hidden role="listbox"></div></div>
       <div class="fpr-seg" role="tablist">${MODES.map((m) => `<button type="button" data-act="mode" data-mode="${m.key}" class="${m.key === this.mode ? 'on' : ''}">${esc(m.label)}</button>`).join('')}</div>
+      ${this.mode === 'huc' ? `<div class="fpr-pick-size" role="group" aria-label="Pick watersheds by size">
+        <span class="fpr-pick-size-l" aria-hidden="true">Pick</span>
+        <div class="fpr-seg">${PICK_SIZES.map((s) => `<button type="button" data-act="size" data-size="${s}" class="${s === this.pickSize ? 'on' : ''}" aria-pressed="${s === this.pickSize}">HUC${s}</button>`).join('')}</div>
+      </div>` : ''}
       <div class="fpr-note fpr-mode-hint">${esc(hint)}</div>
       ${this.mode === 'huc' ? '<div id="fpr-area-picks"></div>' : ''}
       <div id="fpr-area-summary"></div>
@@ -1065,17 +1130,23 @@ export class App {
       </div>`
   }
 
-  /** The watersheds picked, with the whole HUC10 or HUC8 of the last one (nothing until one is picked). */
+  /** The watersheds picked: one chip per whole HUC8 or HUC10, then one per HUC12 (nothing until one is
+   * picked). A chip's x takes all of it out. */
   private picksHtml(): string {
     if (!this.codes.size) return ''
-    const codes = [...this.codes].sort()
-    const shown = codes.slice(0, 12)
-    return `<div class="fpr-chips">${shown.map((c) => `<button type="button" class="fpr-chip on" data-act="unpick" data-code="${c}" title="Remove HUC12 ${c}">${esc(this.huc12Names.get(c) || c)} &times;</button>`).join('')}</div>
-      ${codes.length > shown.length ? `<div class="fpr-note">and ${codes.length - shown.length} more HUC12 watersheds</div>` : ''}
-      <div class="fpr-actions fpr-whole">
-        <button type="button" class="btn btn-outline-primary btn-sm" data-act="whole10"${this.lastPick ? '' : ' disabled'}>Add whole HUC10</button>
-        <button type="button" class="btn btn-outline-primary btn-sm" data-act="whole8"${this.lastPick ? '' : ' disabled'}>Add whole HUC8</button>
-      </div>`
+    const chips = chipsOf(this.codes, (c) => this.hucsUnder(c))
+    const shown = chips.slice(0, 12)
+    const more = chips.slice(12).reduce((n, c) => n + c.codes.length, 0)
+    return `<div class="fpr-chips">${shown.map((c) => this.chipHtml(c)).join('')}</div>
+      ${more ? `<div class="fpr-note">and ${count(more)} more HUC12 watershed${more === 1 ? '' : 's'}</div>` : ''}`
+  }
+
+  private chipHtml(c: Chip): string {
+    const n = c.codes.length
+    const label = c.size === 12 ? this.huc12Names.get(c.code) || c.code
+      : c.size === 8 ? `${this.idx?.huc8[c.code]?.name || `HUC8 ${c.code}`} (${n})` : `HUC10 ${c.code} (${n})`
+    const title = c.size === 12 ? `Remove HUC12 ${c.code}` : `Remove HUC${c.size} ${c.code}, ${n} HUC12 watersheds`
+    return `<button type="button" class="fpr-chip on" data-act="unpick" data-codes="${c.codes.join(' ')}" title="${esc(title)}">${esc(label)} &times;</button>`
   }
 
   /** The study area's reaches with values to screen (lines not sampled left out) and their length. */
@@ -1096,9 +1167,16 @@ export class App {
 
   private areaText(): string {
     if (this.mode === 'huc' && this.codes.size) {
-      const codes = [...this.codes].sort()
-      const names = codes.slice(0, 4).map((c) => `${this.huc12Names.get(c) || 'HUC12'} (${c})`)
-      return `${codes.length} HUC12 watershed${codes.length === 1 ? '' : 's'}: ${names.join(', ')}${codes.length > 4 ? `, and ${codes.length - 4} more` : ''}`
+      // a whole HUC8 or HUC10 by its name or code, as the chips show it
+      const n = this.codes.size
+      const chips = chipsOf(this.codes, (c) => this.hucsUnder(c))
+      const names = chips.slice(0, 4).map((c) => {
+        if (c.size === 12) return `${this.huc12Names.get(c.code) || 'HUC12'} (${c.code})`
+        const name = c.size === 8 ? this.idx?.huc8[c.code]?.name : ''
+        return name ? `HUC8 ${name} (${c.code})` : `HUC${c.size} ${c.code}`
+      })
+      const rest = chips.length - names.length
+      return `${count(n)} HUC12 watershed${n === 1 ? '' : 's'}: ${names.join(', ')}${rest > 0 ? `, and ${rest} more` : ''}`
     }
     if (this.mode === 'walk' && this.walkFrom) {
       const ref = this.findReach(this.walkFrom.id)
@@ -1752,7 +1830,6 @@ export class App {
     this.renderPane()
     if (this.mode === 'huc') {
       for (const c of s.area.codes ?? []) this.codes.add(c)
-      this.lastPick = [...this.codes][0] ?? null
       this.restylePicks()
       await this.ensureFiles(hucFiles([...this.codes]))
     } else if (this.mode === 'walk' && s.area.walk && this.idx) {
@@ -1789,17 +1866,27 @@ export class App {
     const z = this.map.getZoom()
     if (this.step === 1 && this.sub === 'area') {
       if (this.mode === 'huc' && z < PICK_ZOOM) text = 'Zoom in to pick watersheds.'
-      else if (this.mode === 'huc' && this.hucHover !== null) {
-        const name = this.huc12Names.get(this.hucHover)
-        const click = this.codes.has(this.hucHover) ? 'Click to remove it from the study area.' : 'Click to add it to the study area.'
-        text = `${name ? `${name}, ` : ''}HUC12 ${this.hucHover}. ${click}`
-      } else if (this.mode === 'walk' && z < VIEW_ZOOM) text = 'Zoom in until streams show, then click one.'
+      else if (this.mode === 'huc' && this.hucHover !== null) text = this.hucCue(this.hucHover)
+      else if (this.mode === 'walk' && z < VIEW_ZOOM) text = 'Zoom in until streams show, then click one.'
       else if (this.mode === 'walk' && !this.walkFrom) text = 'Click a stream. Everything upstream becomes the study area.'
       else if (this.mode === 'reach' && this.boxSelect.drawing) text = 'Let go to add the reaches in the box.'
       else if (this.mode === 'reach' && z < VIEW_ZOOM) text = 'Zoom in until streams show, then click reaches.'
     } else if (!this.result && z < VIEW_ZOOM && this.idx) text = 'Zoom in to see reaches.'
     else if (this.result && z < AREA_ZOOM) text = 'Zoom in to see the study area.'
     this.cue.innerHTML = text ? `<div class="fpr-cue">${esc(text)}</div>` : ''
+  }
+
+  /** The cue over a watershed: the unit a click takes at the pick size now, and what the click does. */
+  private hucCue(code: string): string {
+    const unit = this.unitCodes(code)
+    const click = unit.every((c) => this.codes.has(c)) ? 'Click to remove it from the study area.' : 'Click to add it to the study area.'
+    if (this.pickSize === 12) {
+      const name = this.huc12Names.get(code)
+      return `${name ? `${name}, ` : ''}HUC12 ${code}. ${click}`
+    }
+    const p = code.slice(0, this.pickSize)
+    const name = this.pickSize === 8 ? this.idx?.huc8[p]?.name : ''
+    return `${name ? `${name}, ` : ''}HUC${this.pickSize} ${p}, ${count(unit.length)} watershed${unit.length === 1 ? '' : 's'}. ${click}`
   }
 
   private nudgeCue(): void {

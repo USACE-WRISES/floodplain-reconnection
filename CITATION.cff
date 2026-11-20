@@ -2,8 +2,8 @@ cff-version: 1.2.0
 message: "If you use the Floodplain Reconnection Decision Tool in your work, please cite it as below."
 title: "Floodplain Reconnection Decision Tool"
 type: software
-version: 0.3.0
-date-released: 2026-11-19
+version: 0.3.1
+date-released: 2026-11-20
 repository-code: "https://github.com/USACE-WRISES/floodplain-reconnection"
 url: "https://usace-wrises.github.io/floodplain-reconnection/"
 abstract: "A web application that helps U.S. Army Corps of Engineers teams find, compare and choose floodplain reconnection projects. Its first step screens stream reaches from a national cross-section grid built on USGS 3DEP elevation data: bank height ratio and entrenchment ratio for every reach of about 1,000 ft, criteria the team sets, and a ranked shortlist of candidate sites."

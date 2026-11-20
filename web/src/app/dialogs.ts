@@ -34,8 +34,8 @@ export function showAbout(idx: FprIndex | null, dataVersion: string): void {
 export function showHelp(): void {
   showModal('Help', `
     <h5>1. Study area</h5>
-    <p>Choose <b>Watersheds</b> and click HUC12 watersheds to add or remove them (then add a whole HUC10 or HUC8 if
-    you like), <b>Upstream</b> and click a stream to take everything upstream of it, or <b>Reaches</b> and click the
+    <p>Choose <b>Watersheds</b>, pick a size (HUC12, HUC10 or HUC8), and click the map to add or remove a watershed
+    of that size; <b>Upstream</b>, and click a stream to take everything upstream of it; or <b>Reaches</b>, and click the
     reaches you want. In Reaches, hold Shift and drag to add every reach in a box, as many boxes as you like.</p>
     <h5>2. Screen</h5>
     <p>Set the drainage area, bank height ratio and entrenchment ratio a reach needs. Beside each box is the number

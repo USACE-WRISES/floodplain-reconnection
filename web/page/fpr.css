@@ -197,7 +197,11 @@ a { color: var(--fpr-accent); }
 
 /* the Study area step: one line on the chosen way, the picks, the area in one line */
 .fpr-mode-hint { margin: 0 0 10px; }
-.fpr-whole { margin-top: 8px; }
+/* Watersheds' pick-size switch (the owner, 2026-11-20): a click picks a HUC12, or a whole HUC10 or HUC8 */
+.fpr-pick-size { display: flex; align-items: center; gap: 8px; margin: -2px 0 8px; }
+.fpr-pick-size-l { font-size: 12px; font-weight: 600; color: var(--fpr-instr); }
+.fpr-pick-size .fpr-seg { flex: 1; margin: 0; }
+.fpr-pick-size .fpr-seg button { padding: 4px; font-size: 11.5px; }
 .fpr-area-line { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 12px;
   background: #f5f8fb; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px 12px; font-size: 13px; }
 .fpr-area-line b { color: var(--fpr-title); font-variant-numeric: tabular-nums; }
