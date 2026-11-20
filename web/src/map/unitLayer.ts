@@ -27,12 +27,13 @@ export interface LineStyle {
   strong?: boolean
 }
 
-/** Colored reaches stand out from the basemap (the owner, 2026-11-20): wider from this zoom in, where
- * the lines were thinnest (zoom 11 and out, with the whole network shown, keep their widths)... */
+/** Colored reaches stand out from the basemap (the owner, 2026-11-20): from this zoom in, where the lines
+ * were thinnest, they are wider and drawn over a white edge. Zoom 11, the whole network in view, keeps its
+ * widths and draws no edge: there the edge was half a pixel a side and doubled the time to paint the map
+ * (the owner's choice, 2026-11-20)... */
 const STRONG_ZOOM = 12
 const STRONG_WIDER = 1.2
-/** ...and a white edge under each, which adds this share of the line's width (both sides together),
- * at most EDGE_MAX px: a thin line far out gets a thin edge. */
+/** ...the edge adds this share of the line's width (both sides together), at most EDGE_MAX px. */
 const EDGE = '#ffffff'
 const EDGE_ALPHA = 0.9
 const EDGE_SHARE = 0.75
@@ -114,10 +115,14 @@ export class UnitLayer {
     this.highlighter._container.classList.add('fpr-unit-canvas')
   }
 
-  /** The style table (index 0 is "not drawn") and each loaded file's row style ids. */
+  /** The style table (index 0 is "not drawn") and each loaded file's row style ids. The same styles as
+   * before (a switch of the study-area way that leaves the map as it was) paint nothing: a repaint of
+   * the whole network at zoom 11 takes a good part of a second. */
   setStyles(styles: LineStyle[], ids: Uint16Array[]): void {
+    const same = styles === this.styles && ids.length === this.ids.length && ids.every((a, i) => sameIds(a, this.ids[i]))
     this.styles = styles
     this.ids = ids
+    if (same) return
     this.redraw()
     this.redrawHighlight()
   }
@@ -159,7 +164,9 @@ export class UnitLayer {
     return order >= 5 ? 2 : order >= 3 ? 1 : 0
   }
 
-  /** A row's line on a context or a path, in layer points (scale and origin: the map's at this zoom). */
+  /** A row's line on a context or a path, in layer points (scale and origin: the map's at this zoom). A
+   * vertex less than a pixel from the last one drawn is skipped (the last vertex never is): at zoom 11 a
+   * reach is a few pixels long, and its sub-pixel segments cost paint time for nothing. */
   private path(ctx: CanvasPath, ref: Ref, scale: number, ox: number, oy: number): void {
     const f = this.net.files[fileOf(ref)]
     if (!f) return
@@ -167,8 +174,18 @@ export class UnitLayer {
     const a = f.off[r]
     const e = f.off[r + 1]
     if (e - a < 2) return
-    ctx.moveTo(f.mx[a] * scale - ox, f.my[a] * scale - oy)
-    for (let v = a + 1; v < e; v++) ctx.lineTo(f.mx[v] * scale - ox, f.my[v] * scale - oy)
+    let px = f.mx[a] * scale - ox
+    let py = f.my[a] * scale - oy
+    ctx.moveTo(px, py)
+    for (let v = a + 1; v < e - 1; v++) {
+      const x = f.mx[v] * scale - ox
+      const y = f.my[v] * scale - oy
+      if ((x - px) * (x - px) + (y - py) * (y - py) < 1) continue
+      ctx.lineTo(x, y)
+      px = x
+      py = y
+    }
+    ctx.lineTo(f.mx[e - 1] * scale - ox, f.my[e - 1] * scale - oy)
   }
 
   draw(ctx: CanvasRenderingContext2D, bounds: L.Bounds, map: L.Map): void {
@@ -214,15 +231,18 @@ export class UnitLayer {
     })
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
-    // the white edges first, every one of them, so no edge cuts across a line where two reaches meet
-    ctx.strokeStyle = EDGE
-    ctx.globalAlpha = EDGE_ALPHA
-    ctx.setLineDash([])
-    keys.forEach((key, i) => {
-      if (!this.styles[key >> 2].strong) return
-      ctx.lineWidth = widths[i] + Math.min(EDGE_MAX, widths[i] * EDGE_SHARE)
-      ctx.stroke(paths[i])
-    })
+    // the white edges first (from STRONG_ZOOM in), every one of them, so no edge cuts across a line where
+    // two reaches meet
+    if (zoom >= STRONG_ZOOM) {
+      ctx.strokeStyle = EDGE
+      ctx.globalAlpha = EDGE_ALPHA
+      ctx.setLineDash([])
+      keys.forEach((key, i) => {
+        if (!this.styles[key >> 2].strong) return
+        ctx.lineWidth = widths[i] + Math.min(EDGE_MAX, widths[i] * EDGE_SHARE)
+        ctx.stroke(paths[i])
+      })
+    }
     keys.forEach((key, i) => {
       const st = this.styles[key >> 2]
       ctx.globalAlpha = st.alpha ?? 1
@@ -322,6 +342,13 @@ export class UnitLayer {
     }
     return best
   }
+}
+
+/** Whether two files' style ids are the same (a file not there before is not). */
+function sameIds(a: Uint16Array, b: Uint16Array | undefined): boolean {
+  if (!b || a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
 }
 
 function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {

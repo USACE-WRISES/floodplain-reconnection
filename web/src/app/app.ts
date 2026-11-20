@@ -145,6 +145,8 @@ export class App {
   /** Where the map sits (viewport px) and its offset in the page's shell, measured on resize. */
   private layout = { mapLeft: 0, mapTop: 0, dx: 0, dy: 0, w: 0, h: 0 }
   private recomputeFrame = 0
+  /** the watershed outlines' update after a switch of the study-area way, at the next frame */
+  private picksFrame = 0
   private inputTimer = 0
 
   constructor(params: URLSearchParams, dataBase: string, stafBase: string) {
@@ -1027,9 +1029,18 @@ export class App {
     this.setPin(mode === 'walk' && this.walkFrom ? this.findReach(this.walkFrom.id) : null)
     this.touch()
     this.recompute()
-    this.updatePicks()
     this.updateCue()
     this.renderPane()
+    // the pane answers the click at once (the owner, 2026-11-20: a switch took about 2 s); the watershed
+    // outlines, hundreds of polygons to project, come in or go out on the next frame, once however
+    // quickly the ways are switched
+    if (!this.picksFrame) {
+      this.picksFrame = requestAnimationFrame(() => {
+        this.picksFrame = 0
+        this.updatePicks()
+        this.updateCue()
+      })
+    }
   }
 
   private stepsStrip(): string {

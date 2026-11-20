@@ -3,6 +3,8 @@
 ## v0.3.1 (2026-11-20)
 - Watersheds: pick by HUC12, HUC10 or HUC8, then click the map to add one.
 - A whole HUC10 or HUC8 shows as one chip, in place of the Add whole buttons.
+- Switching Watersheds, Upstream and Reaches no longer lags.
+- Reaches draw faster; the white edge starts at zoom 12.
 
 ## v0.3.0 (2026-11-19)
 - Reaches: click reaches, or hold Shift and drag boxes, to screen known sites.
