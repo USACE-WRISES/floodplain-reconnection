@@ -10,16 +10,23 @@
 // A section is drawn when the release stores its profile (one per stream line) or once the user pulls it
 // from USGS 3DEP with the button: never on its own (the owner's rule, 2026-10-11). Pulled profiles are
 // kept for the page's life.
+//
+// A small map over the section's numbers (the owner, 2026-11-20) shows where each section lies, numbered
+// like the buttons, and the shown one across its sampled width (sectionmap.ts). It heads its column, so
+// the words under it, which change from section to section, never move it.
 import type { DataSource } from '../data/source'
 import { Q_UNSAMPLED, WHY, type UnitFile } from '../data/units'
+import { latLngsOf, markOf, marksAlong, type SectionMark } from '../map/along'
+import type { Basemap } from '../map/map'
 import type { Edits, SectionEdit } from '../screen/edits'
 import { FT_PER_M, ratio } from '../screen/format'
-import { medianProfile } from '../xs/grid'
+import { medianProfile, sectionPulls } from '../xs/grid'
 import { pullable, ratioMedian, reachSections, scored, type ReachSection } from '../xs/reach'
 import { defaultHeights, measure, profileFrom, type Measured, type Profile } from '../xs/section'
 import { medianCandidate } from '../xs/xsreach'
 import { esc } from './html'
 import { termButton } from './ratios'
+import { SectionMap } from './sectionmap'
 import { type Heights, XsChart } from './xschart'
 
 const SQFT_PER_SQM = FT_PER_M * FT_PER_M
@@ -32,6 +39,8 @@ const STATUS_WORDS: Record<string, string> = {
 export interface ExplorerHost {
   readonly staf: DataSource
   readonly edits: Edits
+  /** the main map's basemap, for the small map */
+  basemap(): Basemap
   /** an edit was set or cleared: the screen again (the map, the pane and the popup's facts) */
   changed(): void
 }
@@ -72,6 +81,7 @@ export class ReachExplorer {
   private pending = false
   private viewOnly = false
   private chart: XsChart | null = null
+  private minimap: SectionMap | null = null
   private closed = false
 
   constructor(private readonly host: ExplorerHost, private readonly f: UnitFile, private readonly r: number,
@@ -112,6 +122,8 @@ export class ReachExplorer {
   close(): void {
     if (this.pending) this.commit()
     this.closed = true
+    this.minimap?.destroy()
+    this.minimap = null
   }
 
   private q<T extends Element>(sel: string): T {
@@ -125,25 +137,28 @@ export class ReachExplorer {
 
   private layout(): void {
     const n = this.sections.length
+    // the buttons head the chart's column, so the side column's map starts level with them and the tab
+    // still fits a window 900 px tall
     this.root.innerHTML = `
-      <div class="fpr-xsx-pick" role="group" aria-label="Cross-sections" data-xsx-pick>
-        <span class="fpr-xsx-pick-l" aria-hidden="true">Section</span>
-        ${this.sections.map((_, j) => `<button type="button" data-xsx-go="${j}">${j + 1}</button>`).join('')}
-      </div>
-      <div class="fpr-xsx-where" data-xsx-label></div>
       <div class="fpr-xsx-main">
         <div>
+          <div class="fpr-xsx-pick" role="group" aria-label="Cross-sections" data-xsx-pick>
+            <span class="fpr-xsx-pick-l" aria-hidden="true">Section</span>
+            ${this.sections.map((_, j) => `<button type="button" data-xsx-go="${j}">${j + 1}</button>`).join('')}
+          </div>
+          <div class="fpr-xsx-where" data-xsx-label></div>
           <div class="fpr-xsx-chart" data-xsx-chart></div>
           <div class="fpr-xs-cap" data-xsx-cap></div>
         </div>
         <div class="fpr-xsx-side">
-          <div class="fpr-xsx-side-h">This section</div>
+          <div class="fpr-xsx-map" data-xsx-map role="group" aria-label="Map of the reach and its cross-sections"></div>
+          <div class="fpr-xs-cap fpr-xsx-map-cap" data-xsx-map-cap></div>
+          <div class="fpr-xsx-side-h"><span>This section</span><button type="button" class="btn btn-link btn-sm p-0 fpr-xsx-reset" data-xsx="reset">Reset section</button></div>
           <div class="fpr-xsx-nums" data-xsx-nums></div>
           <div class="fpr-xsx-edit">
             <label>Bankfull depth<span class="fpr-xsx-in"><input type="number" class="form-control form-control-sm" data-xsx-in="bf" step="0.01" min="0.05" inputmode="decimal" aria-label="Bankfull depth, feet"> ft</span></label>
             <label>Low-bank height<span class="fpr-xsx-in"><input type="number" class="form-control form-control-sm" data-xsx-in="lb" step="0.01" min="0.05" inputmode="decimal" aria-label="Low-bank height above the bed, feet"> ft</span></label>
           </div>
-          <button type="button" class="btn btn-outline-secondary btn-sm" data-xsx="reset">Reset section</button>
           <p class="fpr-note fpr-xsx-state" data-xsx-state></p>
         </div>
       </div>`
@@ -195,6 +210,45 @@ export class ReachExplorer {
         if (e.key === 'Enter' && this.pending) this.commit()
       })
     }
+    this.makeMap()
+  }
+
+  /** The small map: the sections along the reach's line at once, then where the grid put them. A map
+   * that cannot be made is left out, and the buttons still show every section. */
+  private makeMap(): void {
+    const box = this.root.querySelector<HTMLElement>('[data-xsx-map]')
+    const cap = this.root.querySelector<HTMLElement>('[data-xsx-map-cap]')
+    if (!box || !cap) return
+    const { f, r } = this
+    const along = marksAlong(f.mx, f.my, f.off[r], f.off[r + 1], this.sections.length)
+    try {
+      this.minimap = new SectionMap(box, {
+        basemap: this.host.basemap(), line: latLngsOf(f.mx, f.my, f.off[r], f.off[r + 1]), marks: along, onPick: (j) => this.go(j),
+      })
+    } catch {
+      box.hidden = true
+      cap.hidden = true
+      return
+    }
+    cap.textContent = 'Click a number to show that section.'
+    void this.loadPlaces(along, cap)
+  }
+
+  /** The grid's exact places (lazy: with the projection, out of the main bundle). Any it cannot place stay
+   * along the line, and the caption says so. */
+  private async loadPlaces(along: (SectionMark | null)[], cap: HTMLElement): Promise<void> {
+    let marks = along
+    try {
+      const { sectionLines } = await import('../xs/sectionLines')
+      const lines = await sectionLines(this.sections, (vpu, id) => sectionPulls(this.host.staf, vpu, id))
+      if (lines) marks = lines.map((l, j) => (l ? markOf(l.mid, l.a, l.b, l.full) : along[j]))
+    } catch {
+      // the places along the line stay
+    }
+    if (this.closed || !this.minimap) return
+    if (marks !== along) this.minimap.setMarks(marks)
+    const approx = marks.some((m) => m !== null && !m.exact)
+    cap.textContent = `Click a number to show that section.${approx ? ' Some places are approximate.' : ''}`
   }
 
   private editOf(s: ReachSection): SectionEdit | undefined {
@@ -213,6 +267,7 @@ export class ReachExplorer {
   private go(i: number): void {
     if (this.pending) this.commit()
     this.i = i
+    this.minimap?.select(i)
     this.h = null
     const s = this.sections[i]
     const key = keyOf(s)
@@ -334,6 +389,8 @@ export class ReachExplorer {
       const label = `Section ${j + 1}, ${station(sj)}: ${v ? ratios(v) : 'not measured'}${yours ? ', your heights' : ''}${sj.stored ? ', stored profile' : ''}`
       b.title = label
       b.setAttribute('aria-label', label)
+      // the small map's number reads as its button does
+      this.minimap?.flag(j, { on, edited: yours, muted: !v, stored: sj.stored, title: label })
     })
     const tags = [this.i === this.def ? 'nearest the reach medians' : '', s.stored ? 'stored profile' : '', mine ? 'your heights' : '']
     this.q<HTMLElement>('[data-xsx-label]').textContent = [`${station(s)} from the upstream end`, ...tags.filter(Boolean)].join(' · ')

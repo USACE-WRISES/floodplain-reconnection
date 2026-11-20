@@ -29,8 +29,9 @@ both with range reads. A page can be pointed at other copies with `?data=<url>` 
 | `page/` | Files served as they are: `fpr.css` (the look, after STAF's web app), Bootstrap's stylesheet as Shiny for Python bundles it, Leaflet's stylesheet, the fonts, the download worker, `licenses.txt` |
 | `src/data/` | The data layer: `source.ts`, `cache.ts`, `signed.ts`, `range.ts`, `parquet.ts`, `zstd.ts` (adapted from STAF's web app), `units.ts` (a HUC8's reaches as typed arrays), `index.ts` (the layer's index), `staf.ts` (a stored cross-section from STAF's layout) |
 | `src/screen/` | The network (`model.ts`: rows across files, links, the upstream walk, study areas), the screen (`screen.ts`: criteria, funnel, sites), the Screen step's rows (`rows.ts`: on, off and the values they keep) and the words (`format.ts`) |
-| `src/map/` | The map (`map.ts`), the reach canvas with its hit grid (`unitLayer.ts`), the color ramps (`ramp.ts`) |
-| `src/app/` | The app (`app.ts`: steps, panes, map events), the two ratios' cards and diagrams (`ratios.ts`), dialogs, exports, search, downloads, toasts |
+| `src/map/` | The map (`map.ts`), the reach canvas with its hit grid and the Cross-sections layer (`unitLayer.ts`), sections placed along a reach's line (`along.ts`), the color ramps (`ramp.ts`) |
+| `src/xs/` | A reach's cross-sections from STAF's layout (`reach.ts`, `grid.ts`), their exact places for the popup's small map (`sectionLines.ts`), and a section pulled from USGS 3DEP |
+| `src/app/` | The app (`app.ts`: steps, panes, map events), the reach popup (`xsexplorer.ts`, its small map `sectionmap.ts`), the two ratios' cards and diagrams (`ratios.ts`), dialogs, exports, search, downloads, toasts |
 | `tests/` | Vitest: the screen on a synthetic network, the exports, the repository's rules, and the builder's fixtures |
 
 ## Under the USACE network's browser isolation

@@ -9,7 +9,7 @@ import { huc12Text, latOf, loadUnits, lonOf, mercX, mercY, Q_CAUTION, Q_NODATA, 
 import { BoxSelect } from '../map/boxSelect'
 import { makeMap, outlineRenderer, PANES, START, type AppMap } from '../map/map'
 import { AT_CAP, binColor, binOf, BINS, MATCH, NO_DATA, RAMPS, rampColor, rampGradient, type RampSpec } from '../map/ramp'
-import { UnitLayer, type LineStyle } from '../map/unitLayer'
+import { TICK_ZOOM, UnitLayer, type LineStyle } from '../map/unitLayer'
 import { Edits } from '../screen/edits'
 import { bhrText, count, flagTexts, ft, mi, QUALITY_LABEL, ratio, slopeText, sqmi } from '../screen/format'
 import { chipsOf, toggleUnit, unitOf, type Chip, type PickSize } from '../screen/hucs'
@@ -178,7 +178,9 @@ export class App {
     this.src.onBusy = (ms) => notify(`The data host is busy. Trying again in ${Math.round(ms / 1000)} s.`, { type: 'warning', id: 'busy', seconds: 6 })
     this.m = makeMap(byId('fpr-map'))
     this.map = this.m.map
-    this.units = new UnitLayer(this.map, this.net, PANES.units, PANES.highlight)
+    this.units = new UnitLayer(this.map, this.net, PANES.units, PANES.highlight, PANES.ticks)
+    // the Cross-sections layer in the Layers control: the tick canvas, on the map while it is checked
+    this.m.sections.addLayer(this.units.ticks)
     // a box belongs to the study area it was drawn on: a Clear or an Open since drops it
     this.boxSelect = new BoxSelect(this.map, PANES.marks, (b) => {
       const gen = this.areaGen
@@ -507,6 +509,8 @@ export class App {
       if (shown !== reaches) this.restyle()
       reaches = shown
     })
+    // the Cross-sections layer turned on or off: its cue
+    this.map.on('overlayadd overlayremove', () => this.updateCue())
     // The pointer, straight from the map's element (Leaflet hands moves over a canvas on at most every
     // 32 ms): the latest move is handled once a frame, with positions from a cached layout, so a move
     // reads no layout and a hover repaints only the highlight canvas.
@@ -1802,6 +1806,8 @@ export class App {
     explorer = new ReachExplorer({
       staf: this.staf,
       edits: this.edits,
+      // the popup's small map shows the main map's basemap
+      basemap: () => this.m.basemap(),
       changed: () => {
         this.touch()
         this.recompute()
@@ -2096,6 +2102,8 @@ export class App {
       else if (this.mode === 'reach' && z < VIEW_ZOOM) text = 'Zoom in until streams show, then click reaches.'
     } else if (!this.result && z < VIEW_ZOOM && this.idx) text = 'Zoom in to see reaches.'
     else if (this.result && z < AREA_ZOOM) text = 'Zoom in to see the study area.'
+    // the Cross-sections layer draws from TICK_ZOOM in: the last cue to show
+    if (!text && z < TICK_ZOOM && this.map.hasLayer(this.m.sections)) text = 'Zoom in to see cross-sections.'
     this.cue.innerHTML = text ? `<div class="fpr-cue">${esc(text)}</div>` : ''
   }
 

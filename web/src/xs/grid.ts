@@ -116,9 +116,10 @@ export interface XsPull {
   zCrc: number | null
 }
 
-/** Each section's stored position, direction and profile checksum, read only when a section is pulled
- * (four float64 columns and one uint32 of the line's pages). Null for a release older than format 3,
- * which cannot be pulled here. */
+/** Each section's stored position, direction and profile checksum, read when a reach popup's small map
+ * places its sections (sectionLines.ts) and when a section is pulled (four float64 columns and one uint32
+ * of the line's pages; the range reads are cached, so a pull after the map reads nothing new). Null for a
+ * release older than format 3, which cannot be placed or pulled here. */
 export async function sectionPulls(src: DataSource, vpu: string, id: bigint): Promise<XsPull[] | null> {
   const logical = `xs/xs-${vpu}-sections.parquet`
   const meta = await metadata(src, logical)

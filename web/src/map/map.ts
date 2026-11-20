@@ -1,7 +1,7 @@
 // The map: STAF's basemaps and controls (apps/staf-web/src/app/map.ts: USGS Topo shown, USGS
 // Imagery, the Layers control top right, the scale bottom right), the reach canvas, the HUC8
 // coverage outlines (where the reach layer is built), the HUC12 outlines a study area is picked
-// from, and the legend under the Layers control. The zoom buttons sit between the two, with the other
+// from, the Cross-sections layer (off at the start), and the legend under the Layers control. The zoom buttons sit between the two, with the other
 // map controls (the owner, 2026-11-19; STAF keeps them top left, beside its pane).
 import L from 'leaflet'
 
@@ -18,11 +18,19 @@ const USGS_IMAGERY_ATTR = 'USDA, USGS The National Map: Orthoimagery'
 export const START = { lat: 38.5, lon: -95.5, zoom: 5 }
 
 /** Panes: the outlines under the reaches, the hovered reach and the chosen site just over them (a canvas
- * of their own, so a hover never repaints the reaches), the markers on top. */
-export const PANES = { outlines: 'fprOutlines', units: 'fprUnits', highlight: 'fprHighlight', marks: 'fprMarks' }
+ * of their own, so a hover never repaints the reaches), the cross-sections over those, the markers on top. */
+export const PANES = { outlines: 'fprOutlines', units: 'fprUnits', highlight: 'fprHighlight', ticks: 'fprTicks', marks: 'fprMarks' }
 
 function usgs(url: string, attribution = USGS_ATTR): L.TileLayer {
   return L.tileLayer(url, { attribution, maxNativeZoom: 16, maxZoom: 19 })
+}
+
+export type Basemap = 'topo' | 'imagery'
+
+/** A new tile layer of a basemap (a layer sits on one map at a time: a reach popup's small map makes its
+ * own). */
+export function basemapLayer(which: Basemap): L.TileLayer {
+  return which === 'imagery' ? usgs(USGS_IMAGERY_URL, USGS_IMAGERY_ATTR) : usgs(USGS_TOPO_URL)
 }
 
 export interface AppMap {
@@ -33,6 +41,10 @@ export interface AppMap {
   coverage: L.LayerGroup
   /** the HUC12 outlines a study area is picked from */
   picks: L.LayerGroup
+  /** the Cross-sections layer (off at the start; the app puts the tick canvas in it) */
+  sections: L.LayerGroup
+  /** the basemap shown */
+  basemap(): Basemap
 }
 
 export function makeMap(box: HTMLElement): AppMap {
@@ -41,17 +53,20 @@ export function makeMap(box: HTMLElement): AppMap {
     attributionControl: false, zoomSnap: 1, inertiaDeceleration: 3000, inertiaMaxSpeed: 1500,
   })
   L.control.attribution({ position: 'bottomright', prefix: 'Leaflet' }).addTo(map)
-  const imagery = usgs(USGS_IMAGERY_URL, USGS_IMAGERY_ATTR)
-  const topo = usgs(USGS_TOPO_URL)
+  const imagery = basemapLayer('imagery')
+  const topo = basemapLayer('topo')
   topo.addTo(map)
   Object.assign(map.createPane(PANES.outlines).style, { zIndex: '380' })
   Object.assign(map.createPane(PANES.units).style, { zIndex: '420', pointerEvents: 'none' })
   Object.assign(map.createPane(PANES.highlight).style, { zIndex: '430', pointerEvents: 'none' })
+  Object.assign(map.createPane(PANES.ticks).style, { zIndex: '440', pointerEvents: 'none' })
   Object.assign(map.createPane(PANES.marks).style, { zIndex: '640' })
   const coverage = L.layerGroup().addTo(map)
   const picks = L.layerGroup().addTo(map)
+  // where each reach's cross-sections are (the owner, 2026-11-20): off at the start
+  const sections = L.layerGroup()
   const layers = L.control.layers({ 'USGS Topo': topo, 'USGS Imagery': imagery },
-    { 'Where reaches are built': coverage, 'Watersheds (HUC12)': picks }, { position: 'topright' }).addTo(map)
+    { 'Where reaches are built': coverage, 'Watersheds (HUC12)': picks, 'Cross-sections': sections }, { position: 'topright' }).addTo(map)
   // under the Layers control and over the legend (a top corner stacks its controls as they are added)
   L.control.zoom({ position: 'topright', zoomInText: '+', zoomOutText: '-' }).addTo(map)
   L.control.scale({ position: 'bottomright', metric: true, imperial: true }).addTo(map)
@@ -66,7 +81,7 @@ export function makeMap(box: HTMLElement): AppMap {
   const control = new Legend({ position: 'topright' })
   control.addTo(map)
   const legend = control.getContainer() as HTMLElement
-  return { map, layers, legend, coverage, picks }
+  return { map, layers, legend, coverage, picks, sections, basemap: () => (map.hasLayer(imagery) ? 'imagery' : 'topo') }
 }
 
 /** A canvas renderer for outlines (many polygons, clickable). */

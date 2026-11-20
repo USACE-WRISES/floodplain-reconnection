@@ -1,4 +1,4 @@
-// The reaches on the map, in two canvases (Leaflet canvas renderers with draws of their own, so panning
+// The reaches on the map, in three canvases (Leaflet canvas renderers with draws of their own, so panning
 // and zoom animation behave as Leaflet's own vectors do):
 //
 // - the reach canvas strokes every reach in view, one path per style and width class, from the loaded
@@ -8,12 +8,16 @@
 // - the highlight canvas, just above it, strokes the chosen site and the reach under the pointer, a few
 //   paths, so a hover never repaints the reaches (it used to, at 7 to 12 ms a repaint on a fast desktop
 //   with 80,000 reaches and several times that on a laptop screen at 125% or under the USACE network's
-//   browser isolation).
+//   browser isolation);
+// - the tick canvas, the Cross-sections layer (the owner, 2026-11-20: off at the start, turned on in the
+//   Layers control), marks every section of the drawn reaches across the line, from TICK_ZOOM in. Turning
+//   it on or off never repaints the reaches.
 //
-// Neither canvas takes pointer events: the app finds the reach under the pointer here (`hit`, a grid of
+// No canvas takes pointer events: the app finds the reach under the pointer here (`hit`, a grid of
 // cells over the rows' extents), so the watershed outlines under them stay clickable.
 import L from 'leaflet'
 import { fileOf, refOf, rowOf, type Network, type Ref } from '../screen/model'
+import { eachTick } from './along'
 
 export interface LineStyle {
   color: string
@@ -87,9 +91,48 @@ const HighlightCanvas = (L.Canvas as any).extend({
   },
 })
 
+/** The Cross-sections layer draws from this zoom in, where sections 100 ft apart fall about 8 px apart. */
+export const TICK_ZOOM = 15
+/** A tick reaches this far (px) past the drawn line and its white edge, on each side. */
+const TICK_OUT = 4
+const TICK_WIDTH = 1.5
+const TICK_HALO = 1.25
+const TICK_COLOR = '#1f2937'
+
+const TickCanvas = (L.Canvas as any).extend({
+  // Leaflet makes a new canvas each time the layer is put on the map
+  _initContainer(this: any) {
+    ;(L.Canvas as any).prototype._initContainer.call(this)
+    this._container.classList.add('fpr-unit-canvas')
+  },
+  // below TICK_ZOOM the canvas keeps no pixels (one the map's size, at twice the pixels, takes tens of MB)
+  _update(this: any) {
+    if (this._map.getZoom() >= TICK_ZOOM || this._map._animatingZoom) {
+      update.call(this)
+      return
+    }
+    ;(L.Renderer as any).prototype._update.call(this)
+    this._container.width = 0
+    this._container.height = 0
+    this.fire('update')
+  },
+  _draw(this: any) {
+    this.options.owner.drawTicks(this._ctx, this._bounds, this._map)
+  },
+})
+
 /** Line widths grow with the zoom. */
 function zoomFactor(zoom: number): number {
   return zoom >= 15 ? 1.25 : zoom >= 14 ? 1 : zoom >= 12 ? 0.8 : zoom >= 10 ? 0.6 : 0.45
+}
+
+/** The width added by a line's width class (stream order 1 and 2, 3 and 4, 5 and up). */
+const CLASS_BONUS = [0, 0.6, 1.3]
+
+/** A style's line width at a zoom, px, as the reach canvas strokes it. */
+function lineWidth(st: LineStyle, cls: number, zoom: number): number {
+  const wider = st.strong && zoom >= STRONG_ZOOM ? STRONG_WIDER : 1
+  return Math.max(0.6, (st.width + CLASS_BONUS[cls]) * zoomFactor(zoom) * wider)
 }
 
 export class UnitLayer {
@@ -103,16 +146,28 @@ export class UnitLayer {
   private gridFiles = 0
   private pending = 0
   private pendingHighlight = 0
+  private tickCanvas: any
+  private pendingTicks = 0
   /** Reach canvas repaints so far (the app's debug handle reads it). */
   redraws = 0
+  /** Tick canvas repaints so far, and the ticks the last one drew (the debug handle reads them). */
+  tickDraws = 0
+  ticksDrawn = 0
 
-  constructor(private readonly map: L.Map, private readonly net: Network, pane: string, highlightPane: string) {
+  constructor(private readonly map: L.Map, private readonly net: Network, pane: string, highlightPane: string, ticksPane: string) {
     this.renderer = new ReachCanvas({ pane, padding: PADDING, owner: this })
     this.renderer.addTo(map)
     this.renderer._container.classList.add('fpr-unit-canvas')
     this.highlighter = new HighlightCanvas({ pane: highlightPane, padding: PADDING, owner: this })
     this.highlighter.addTo(map)
     this.highlighter._container.classList.add('fpr-unit-canvas')
+    // made here, put on the map by the Layers control (off at the start)
+    this.tickCanvas = new TickCanvas({ pane: ticksPane, padding: PADDING, owner: this })
+  }
+
+  /** The Cross-sections layer, for the Layers control. */
+  get ticks(): L.Layer {
+    return this.tickCanvas
   }
 
   /** The style table (index 0 is "not drawn") and each loaded file's row style ids. The same styles as
@@ -125,6 +180,7 @@ export class UnitLayer {
     if (same) return
     this.redraw()
     this.redrawHighlight()
+    this.redrawTicks()
   }
 
   /** The chosen site's rows (none: no site). */
@@ -156,6 +212,15 @@ export class UnitLayer {
     this.pendingHighlight = requestAnimationFrame(() => {
       this.pendingHighlight = 0
       if (this.highlighter._map) this.highlighter._redraw()
+    })
+  }
+
+  /** The cross-sections, at the next frame (nothing while the layer is off). */
+  private redrawTicks(): void {
+    if (this.pendingTicks || !this.tickCanvas._map) return
+    this.pendingTicks = requestAnimationFrame(() => {
+      this.pendingTicks = 0
+      if (this.tickCanvas._map) this.tickCanvas._redraw()
     })
   }
 
@@ -199,8 +264,6 @@ export class UnitLayer {
     const y0 = (bounds.min!.y + oy) / scale
     const x1 = (bounds.max!.x + ox) / scale
     const y1 = (bounds.max!.y + oy) / scale
-    const zf = zoomFactor(zoom)
-    const classBonus = [0, 0.6, 1.3]
     // group rows by (style, width class)
     const groups = new Map<number, number[]>()
     this.net.files.forEach((f, fi) => {
@@ -224,11 +287,7 @@ export class UnitLayer {
       for (const ref of groups.get(key)!) this.path(p, ref, scale, ox, oy)
       return p
     })
-    const widths = keys.map((key) => {
-      const st = this.styles[key >> 2]
-      const wider = st.strong && zoom >= STRONG_ZOOM ? STRONG_WIDER : 1
-      return Math.max(0.6, (st.width + classBonus[key & 3]) * zf * wider)
-    })
+    const widths = keys.map((key) => lineWidth(this.styles[key >> 2], key & 3, zoom))
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     // the white edges first (from STRONG_ZOOM in), every one of them, so no edge cuts across a line where
@@ -281,6 +340,51 @@ export class UnitLayer {
       ctx.stroke()
       ctx.globalAlpha = 1
     }
+  }
+
+  /** The Cross-sections layer: a tick across the line at every section of the drawn reaches in view
+   * (along.ts places them), reaching TICK_OUT past the line and its edge, dark over a white halo. */
+  drawTicks(ctx: CanvasRenderingContext2D, bounds: L.Bounds, map: L.Map): void {
+    const zoom = map.getZoom()
+    if (zoom < TICK_ZOOM) return
+    this.tickDraws++
+    const scale = 256 * Math.pow(2, zoom)
+    const origin = map.getPixelOrigin()
+    // a tick just past the edge still shows its end
+    const pad = 16
+    const x0 = (bounds.min!.x - pad + origin.x) / scale
+    const y0 = (bounds.min!.y - pad + origin.y) / scale
+    const x1 = (bounds.max!.x + pad + origin.x) / scale
+    const y1 = (bounds.max!.y + pad + origin.y) / scale
+    // half a tick's length, by style and width class
+    const half = new Map<number, number>()
+    const path = new Path2D()
+    this.ticksDrawn = eachTick(this.net.files, this.ids, x0, y0, x1, y1, (x, y, ax, ay, fi, r) => {
+      const key = this.ids[fi][r] * 4 + UnitLayer.widthClass(this.net.files[fi].order[r])
+      let h = half.get(key)
+      if (h === undefined) {
+        const st = this.styles[key >> 2]
+        const w = lineWidth(st, key & 3, zoom)
+        const edge = st.strong && zoom >= STRONG_ZOOM ? Math.min(EDGE_MAX, w * EDGE_SHARE) : 0
+        h = (w + edge) / 2 + TICK_OUT
+        half.set(key, h)
+      }
+      const px = x * scale - origin.x
+      const py = y * scale - origin.y
+      path.moveTo(px - ax * h, py - ay * h)
+      path.lineTo(px + ax * h, py + ay * h)
+    })
+    ctx.setLineDash([])
+    ctx.lineCap = 'round'
+    ctx.strokeStyle = '#ffffff'
+    ctx.globalAlpha = 0.9
+    ctx.lineWidth = TICK_WIDTH + 2 * TICK_HALO
+    ctx.stroke(path)
+    ctx.globalAlpha = 1
+    ctx.lineCap = 'butt'
+    ctx.strokeStyle = TICK_COLOR
+    ctx.lineWidth = TICK_WIDTH
+    ctx.stroke(path)
   }
 
   private buildGrid(): void {

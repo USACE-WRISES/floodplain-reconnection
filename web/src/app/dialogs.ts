@@ -56,7 +56,8 @@ export function showHelp(): void {
     the study area as CSV, or a printable summary. <b>Save</b> writes your study area, criteria, decisions and
     cross-section edits to a file that <b>Open</b> reads back.</p>
     <h5>A reach's cross-sections</h5>
-    <p>Click a reach to open it, and pick a section with the numbered buttons. A section the grid stores is drawn at
+    <p>Click a reach to open it, and pick a section with the numbered buttons or on the small map beside the
+    chart, which shows where each section lies. A section the grid stores is drawn at
     once; <b>Pull from 3DEP</b> draws any other. Drag the bankfull or low-bank line, or type the heights, to set your
     own: the reach is then screened on your edited sections, and the map and the sites follow. <b>Details</b> lists
     every section's ratios and the reach's values.</p>
@@ -68,6 +69,8 @@ export function showHelp(): void {
       (ER), or the candidate sites (Sites).</li>
       <li>Dashed reaches carry a caution. Gray reaches have no data (BHR, ER) or were screened out (Sites); point at
       one to see why.</li>
+      <li>Turn on <b>Cross-sections</b> in the layers menu to see every section a reach is measured on, from zoom 15
+      in.</li>
     </ul>
     <p><a href="#" data-open-methods>Methods and limits</a></p>`)
 }

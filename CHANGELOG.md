@@ -1,6 +1,8 @@
 # Changelog
 
 ## v0.3.2 (2026-11-20)
+- A Cross-sections layer, off at first, marks every section from zoom 15 in.
+- A reach's popup maps its sections; click one there to show it.
 - Point at Bank height ratio or Entrenchment ratio for a diagram of each.
 - Methods and limits draws both ratios on a cross-section.
 - Screen: a checkbox turns each criterion on or off and keeps its value.
