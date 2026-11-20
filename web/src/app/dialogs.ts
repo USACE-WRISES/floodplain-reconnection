@@ -39,11 +39,12 @@ export function showHelp(): void {
     reaches you want. In Reaches, hold Shift and drag to add every reach in a box, as many boxes as you like.</p>
     <h5>2. Screen</h5>
     <p>Set the drainage area, bank height ratio and entrenchment ratio a reach needs. Beside each box is the number
-    of reaches left after it. The last row joins the passing reaches into sites and sets the shortest one, and the
-    card on top counts the candidate sites your study reaches make. Empty a box to turn that criterion off.
-    <b>More settings</b> holds the gaps a site can span, the largest drainage area, the quality filters, and
-    <b>Reset to starting values</b>. Point at an <b>i</b> for what a setting does. The starting values are
-    placeholders for the project team to set.</p>
+    of reaches left after it. Uncheck a row to turn its criterion off; its box keeps the value. The last row joins
+    the passing reaches into sites, and the card on top counts the candidate sites your study reaches make. The
+    shortest site starts unchecked, so every run of passing reaches is a site: reaches run about 1,000 ft, and over
+    half are a little shorter. <b>More settings</b> holds the gaps a site can span, the largest drainage area, the
+    quality filters, and <b>Reset to starting values</b>. Point at an <b>i</b> for what a setting does. The
+    starting values are placeholders for the project team to set.</p>
     <h5>3. Shortlist</h5>
     <p>A candidate site is a run of reaches that meet the criteria along a stream's main stem. A tributary starts a
     site of its own. Rank the sites, keep or drop each one, add notes, and open a site for its reach by reach values
@@ -103,7 +104,7 @@ export function showMethods(idx: FprIndex | null): void {
     data"), and a flood-prone width that runs off the profile or a 3 m or 10 m elevation model ("use with caution").</p>
     <h5>Sites</h5>
     <p>Reaches that meet every criterion and touch along a main stem make a candidate site. Short gaps can be
-    bridged. A run shorter than the shortest site is not a site, and the map draws it gray. Site values
+    bridged. With a shortest site set, a run shorter than it is not a site, and the map draws it gray. Site values
     are the medians of their reaches' values.</p>
     <h5>Coverage</h5>
     <ul>

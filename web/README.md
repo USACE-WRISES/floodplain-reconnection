@@ -28,7 +28,7 @@ both with range reads. A page can be pointed at other copies with `?data=<url>` 
 | `index.html`, `site.ts` | The page: `site.ts` (a Vite plugin) writes the stylesheets into its head |
 | `page/` | Files served as they are: `fpr.css` (the look, after STAF's web app), Bootstrap's stylesheet as Shiny for Python bundles it, Leaflet's stylesheet, the fonts, the download worker, `licenses.txt` |
 | `src/data/` | The data layer: `source.ts`, `cache.ts`, `signed.ts`, `range.ts`, `parquet.ts`, `zstd.ts` (adapted from STAF's web app), `units.ts` (a HUC8's reaches as typed arrays), `index.ts` (the layer's index), `staf.ts` (a stored cross-section from STAF's layout) |
-| `src/screen/` | The network (`model.ts`: rows across files, links, the upstream walk, study areas), the screen (`screen.ts`: criteria, funnel, sites) and the words (`format.ts`) |
+| `src/screen/` | The network (`model.ts`: rows across files, links, the upstream walk, study areas), the screen (`screen.ts`: criteria, funnel, sites), the Screen step's rows (`rows.ts`: on, off and the values they keep) and the words (`format.ts`) |
 | `src/map/` | The map (`map.ts`), the reach canvas with its hit grid (`unitLayer.ts`), the color ramps (`ramp.ts`) |
 | `src/app/` | The app (`app.ts`: steps, panes, map events), dialogs, exports, search, downloads, toasts |
 | `tests/` | Vitest: the screen on a synthetic network, the exports, the repository's rules, and the builder's fixtures |

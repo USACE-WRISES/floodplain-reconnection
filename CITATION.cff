@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use the Floodplain Reconnection Decision Tool in your work, please cite it as below."
 title: "Floodplain Reconnection Decision Tool"
 type: software
-version: 0.3.1
+version: 0.3.2
 date-released: 2026-11-20
 repository-code: "https://github.com/USACE-WRISES/floodplain-reconnection"
 url: "https://usace-wrises.github.io/floodplain-reconnection/"

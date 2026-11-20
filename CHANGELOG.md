@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.2 (2026-11-20)
+- Screen: a checkbox turns each criterion on or off and keeps its value.
+- Site length starts off: over half of all reaches are a little under 1,000 ft.
+
 ## v0.3.1 (2026-11-20)
 - Watersheds: pick by HUC12, HUC10 or HUC8, then click the map to add one.
 - A whole HUC10 or HUC8 shows as one chip, in place of the Add whole buttons.

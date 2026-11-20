@@ -15,6 +15,7 @@ import { bhrText, count, flagTexts, ft, mi, QUALITY_LABEL, ratio, slopeText, sqm
 import { chipsOf, toggleUnit, unitOf, type Chip, type PickSize } from '../screen/hucs'
 import { fileOf, hucFiles, hucMask, Network, refMask, refOf, rowOf, type Ref } from '../screen/model'
 import { addBox, pickedFiles, picksFromBox, resolvePicks, savedPicks, togglePick, type Picks } from '../screen/picks'
+import { applyRow, heldFrom, heldStart, ROW_KEYS, rowOn, type Held, type RowKey } from '../screen/rows'
 import { defaultCriteria, presetOf, rankSites, screen, SORTS, STAGE, type Criteria, type ScreenResult, type Site, type SortKey } from '../screen/screen'
 import { APP_VERSION } from '../version'
 import { plannedPane, showAbout, showHelp, showMethods } from './dialogs'
@@ -68,13 +69,16 @@ const MORE_KEYS = ['gapReaches', 'daMaxSqmi', 'includeCaution', 'countCapped', '
 
 /** The settings' info icons (the owner, 2026-11-20): what each setting does, in a sentence or two. */
 const TIPS: Record<'minSiteFt' | (typeof MORE_KEYS)[number], string> = {
-  minSiteFt: 'Reaches that pass and touch along a stream join into one site; a tributary starts its own. A run shorter than this is not a site.',
+  minSiteFt: 'Reaches that pass and touch along a stream join into one site; a tributary starts its own. Checked, a run shorter than this is not a site. It starts unchecked: reaches run about 1,000 ft, and over half are a little shorter.',
   gapReaches: 'A site may run across this many reaches in a row that miss a criterion or lack data. 0 allows no gaps.',
   daMaxSqmi: 'Leave out reaches that drain more than this, such as large rivers. Empty means no limit.',
   includeCaution: 'Caution marks less certain values: a regional curve used outside its range, banks found only at the highest ground, 3 or 4 sections measured, a flood-prone width that runs off the profile, or a 3 m or 10 m elevation model. Uncheck to leave these reaches out.',
   countCapped: 'Where no bank is found below twice the bankfull depth, the method stops BHR at 2.00, so the true value is 2.00 or more. Checked, these reaches pass any BHR minimum up to 2.00 and count in the BHR row. Uncheck to keep only reaches with a measured BHR.',
   skipCanals: 'Lines the national hydrography maps as canals or ditches: built channels with no natural floodplain to reconnect. Uncheck to screen them too.',
 }
+
+/** The Screen step's rows by criterion: the end of their ids (#fpr-row-, #fpr-left-). */
+const ROW_LEFT: Record<RowKey, string> = { daMinSqmi: 'da', bhrMin: 'bhr', erMin: 'er', minSiteFt: 'sites' }
 
 /** Reaches show for the view from this zoom (the files the view meets load by themselves). */
 const VIEW_ZOOM = 11
@@ -116,6 +120,8 @@ export class App {
   private pin: L.CircleMarker | null = null
   masks: Uint8Array[] = []
   criteria: Criteria = defaultCriteria()
+  /** the Screen rows' values, kept while a row is off (screen/rows.ts) */
+  held: Held = heldStart()
   colorBy: ColorBy = 'bhr'
   result: ScreenResult | null = null
   ranked: Site[] = []
@@ -1002,8 +1008,14 @@ export class App {
     })
     this.pane.addEventListener('change', (e) => {
       const t = e.target as HTMLInputElement | HTMLSelectElement
-      if (t.dataset.crit !== undefined) this.readCriteria()
-      else if (t.id === 'fpr-sort') {
+      if (t.dataset.on !== undefined) this.readCriteria()
+      else if (t.dataset.crit !== undefined) {
+        this.readCriteria()
+        // a row's box left empty, or at a value it cannot hold, shows the value the row keeps
+        const k = t.dataset.crit as RowKey
+        const v = t.value.trim() === '' ? NaN : Number(t.value)
+        if (ROW_KEYS.includes(k) && v !== this.held[k]) t.value = String(this.held[k])
+      } else if (t.id === 'fpr-sort') {
         this.sort = t.value as SortKey
         this.ranked = this.result ? rankSites(this.result.sites, this.sort) : []
         this.siteOf.clear()
@@ -1212,7 +1224,15 @@ export class App {
           n.innerHTML = row.reaches === null ? '' : `${count(row.reaches)}<span class="visually-hidden"> reaches left</span>`
           n.title = row.reaches === null ? '' : `${count(row.reaches)} reach${row.reaches === 1 ? '' : 'es'}, ${mi(row.lengthM)} mi`
         }
-        this.pane.querySelector(`#fpr-row-${row.key}`)?.classList.toggle('off', row.off)
+      }
+      // a row that is off is muted, and its box keeps its value but takes no typing
+      for (const k of ROW_KEYS) {
+        const on = rowOn(this.criteria, k)
+        this.pane.querySelector(`#fpr-row-${ROW_LEFT[k]}`)?.classList.toggle('off', !on)
+        const b = this.pane.querySelector<HTMLInputElement>(`#crit-${k}`)
+        if (b) b.disabled = !on
+        const cb = this.pane.querySelector<HTMLInputElement>(`#on-${k}`)
+        if (cb) cb.checked = on
       }
       // the last row: the sites the passing reaches make
       const sites = this.pane.querySelector<HTMLElement>('#fpr-left-sites')
@@ -1364,20 +1384,25 @@ export class App {
     const box = (key: keyof Criteria, on: boolean) => `<input type="checkbox" class="form-check-input" data-crit="${key}" id="crit-${key}"${on ? ' checked' : ''}>`
     // a setting's words and its info icon (the full text also inside the icon, for a screen reader)
     const named = (key: keyof typeof TIPS, text: string) => `<span class="fpr-crit-label"><label for="crit-${key}">${esc(text)}</label><button type="button" class="fpr-info" data-tip="${key}"><span aria-hidden="true">i</span><span class="visually-hidden">${esc(TIPS[key])}</span></button></span>`
-    // an empty box turns its criterion off; the count beside it is what is left after it
-    const row = (key: keyof Criteria, label: string, v: number | null, step: string, min: string, unit: string, left: 'da' | 'bhr' | 'er') =>
-      `<div class="fpr-crit" id="fpr-row-${left}"><div class="fpr-crit-row">
-        <label for="crit-${key}">${label}</label>${num(key, v, step, min, 'off', `fpr-left-${left}`)}<span class="fpr-unit">${unit}</span><b class="fpr-left" id="fpr-left-${left}"></b></div>
-        ${left === 'da' ? '' : `<div id="fpr-hist-${left}"></div>`}</div>`
+    // a row: its checkbox turns the criterion on or off, and its box keeps the value while off (the
+    // owner, 2026-11-20); the count beside it is what is left after it
+    const row = (key: RowKey, what: string, words: string, step: string, min: string, unit: string, name = '') => {
+      const on = rowOn(c, key)
+      const left = ROW_LEFT[key]
+      return `<div class="fpr-crit${on ? '' : ' off'}" id="fpr-row-${left}"><div class="fpr-crit-row">
+        <input type="checkbox" class="form-check-input" data-on="${key}" id="on-${key}" aria-label="Use ${esc(what)}"${on ? ' checked' : ''}>
+        ${words}<input type="number" class="form-control" id="crit-${key}" data-crit="${key}" value="${this.held[key]}" step="${step}" min="${min}"${name ? ` aria-label="${esc(name)}"` : ''} aria-describedby="fpr-left-${left}"${on ? '' : ' disabled'}>
+        <span class="fpr-unit">${unit}</span><b class="fpr-left" id="fpr-left-${left}"></b></div>
+        ${left === 'bhr' || left === 'er' ? `<div class="fpr-hist-box" id="fpr-hist-${left}"></div>` : ''}</div>`
+    }
     const line = (inner: string) => `<div class="fpr-crit"><div class="fpr-crit-line">${inner}</div></div>`
     return `
       <div class="fpr-result" id="fpr-result" aria-live="polite"></div>
       <div class="fpr-group">Keep reaches with <small>reaches left</small></div>
-      ${row('daMinSqmi', 'Drainage area at least', c.daMinSqmi, '0.5', '0', 'sq mi', 'da')}
-      ${row('bhrMin', 'Bank height ratio at least', c.bhrMin, '0.05', '0', '', 'bhr')}
-      ${row('erMin', 'Entrenchment ratio at least', c.erMin, '0.1', '1', '', 'er')}
-      <div class="fpr-crit" id="fpr-row-sites"><div class="fpr-crit-row">
-        ${named('minSiteFt', 'Sites of at least')}${num('minSiteFt', c.minSiteFt, '100', '0', '0', 'fpr-left-sites')}<span class="fpr-unit">ft</span><b class="fpr-left" id="fpr-left-sites"></b></div></div>
+      ${row('daMinSqmi', 'the drainage area', '<label for="crit-daMinSqmi">Drainage area at least</label>', '0.5', '0', 'sq mi')}
+      ${row('bhrMin', 'the bank height ratio', '<label for="crit-bhrMin">Bank height ratio at least</label>', '0.05', '0', '')}
+      ${row('erMin', 'the entrenchment ratio', '<label for="crit-erMin">Entrenchment ratio at least</label>', '0.1', '1', '')}
+      ${row('minSiteFt', 'the shortest site', named('minSiteFt', 'Sites of at least'), '100', '100', 'ft')}
       <details class="fpr-more" id="fpr-more"${this.moreOpen ? ' open' : ''}>
         <summary>More settings <span class="fpr-more-n" id="fpr-more-n"></span></summary>
         ${line(`${named('gapReaches', 'Allow gaps of up to')}${num('gapReaches', c.gapReaches, '1', '0', '0')}<span class="fpr-unit" id="fpr-gap-unit">reach</span>`)}
@@ -1397,26 +1422,35 @@ export class App {
   }
 
   private readCriteria(): void {
-    const c: Criteria = { ...this.criteria }
+    let c: Criteria = { ...this.criteria }
+    let held = this.held
     this.pane.querySelectorAll<HTMLInputElement>('[data-crit]').forEach((i) => {
       const key = i.dataset.crit as keyof Criteria
-      if (i.type === 'checkbox') (c as any)[key] = i.checked
-      else {
-        const v = i.value.trim() === '' ? null : Number(i.value)
-        const ok = v === null || Number.isFinite(v)
-        if (!ok) return
-        if (key === 'minSiteFt') c.minSiteFt = v === null ? 0 : Math.max(0, v)
-        else if (key === 'gapReaches') c.gapReaches = v === null ? 0 : Math.max(0, Math.round(v))
-        else (c as any)[key] = v
+      if (i.type === 'checkbox') {
+        (c as any)[key] = i.checked
+        return
       }
+      const v = i.value.trim() === '' ? null : Number(i.value)
+      // the four rows: on or off by their checkbox, and an empty box keeps the value held (rows.ts)
+      if (ROW_KEYS.includes(key as RowKey)) {
+        const k = key as RowKey
+        const on = this.pane.querySelector<HTMLInputElement>(`#on-${k}`)?.checked ?? rowOn(c, k)
+        ;({ criteria: c, held } = applyRow(c, held, k, on, v))
+        return
+      }
+      if (v !== null && !Number.isFinite(v)) return
+      if (key === 'gapReaches') c.gapReaches = v === null ? 0 : Math.max(0, Math.round(v))
+      else (c as any)[key] = v
     })
     this.criteria = c
+    this.held = held
     this.touch()
     this.recompute()
   }
 
   private resetCriteria(): void {
     this.criteria = defaultCriteria()
+    this.held = heldStart()
     this.touch()
     this.renderPane()
     this.recompute()
@@ -1476,7 +1510,8 @@ export class App {
     const n = this.ranked.length
     const { study, measured } = this.studyCounts()
     if (!n) {
-      const hint = !study ? '' : this.result.pass ? ' Lower the shortest site.' : ' Lower a minimum or empty a box.'
+      // passing reaches with no site: the site length is on (off, every run is a site)
+      const hint = !study ? '' : this.result.pass ? ' Lower the shortest site or uncheck it.' : ' Lower a minimum or uncheck a row.'
       return `<div class="fpr-result-head"><span class="fpr-result-n">No candidate sites</span></div>
         <div class="fpr-result-sub">${esc(this.noSiteReason() + hint)}</div>`
     }
@@ -1503,13 +1538,13 @@ export class App {
 
   /** The reaches left after each criterion row, from the funnel (a criterion that is off narrows
    * nothing, so its row carries the count above it). */
-  private leftCounts(): { key: 'da' | 'bhr' | 'er', reaches: number | null, lengthM: number, off: boolean }[] {
+  private leftCounts(): { key: 'da' | 'bhr' | 'er', reaches: number | null, lengthM: number }[] {
     const funnel = this.result?.funnel ?? []
     let before = funnel.find((s) => s.key === 'measured')
     return (['da', 'bhr', 'er'] as const).map((key) => {
       const s = funnel.find((x) => x.key === key)
       if (s) before = s
-      return { key, reaches: before ? before.reaches : null, lengthM: before ? before.lengthM : 0, off: !s }
+      return { key, reaches: before ? before.reaches : null, lengthM: before ? before.lengthM : 0 }
     })
   }
 
@@ -1533,7 +1568,7 @@ export class App {
     const total = this.ranked.reduce((a, s) => a + s.lengthM, 0)
     if (!this.ranked.length) {
       const why = this.noSiteReason()
-      const hint = this.result?.pass ? 'Lower the shortest site in the Screen step.' : 'Loosen a criterion in the Screen step.'
+      const hint = this.result?.pass ? 'Lower or uncheck the shortest site in the Screen step.' : 'Loosen a criterion in the Screen step.'
       return `<p>No candidate sites: ${esc(why.charAt(0).toLowerCase() + why.slice(1))} ${hint}</p>`
     }
     const n = this.ranked.length
@@ -1598,7 +1633,8 @@ export class App {
     }
     if (c.bhrMin !== null) out.push(`Bank height ratio ${c.bhrMin.toFixed(2)} or more${c.countCapped ? ', counting reaches that read "at least 2.00"' : ', not counting reaches that read "at least 2.00"'}`)
     if (c.erMin !== null) out.push(`Entrenchment ratio ${c.erMin.toFixed(2)} or more`)
-    out.push(`Sites ${count(c.minSiteFt)} ft or longer, joined across gaps of up to ${c.gapReaches} reach${c.gapReaches === 1 ? '' : 'es'}`)
+    const gaps = `joined across gaps of up to ${c.gapReaches} reach${c.gapReaches === 1 ? '' : 'es'}`
+    out.push(c.minSiteFt > 0 ? `Sites ${count(c.minSiteFt)} ft or longer, ${gaps}` : `Sites: every run of passing reaches, ${gaps}`)
     const preset = presetOf(c)
     if (preset) out.push(`Starting values: ${preset.label}`)
     const edited = this.edits.size
@@ -1943,6 +1979,7 @@ export class App {
     this.clearArea()
     this.mode = 'huc'
     this.criteria = defaultCriteria()
+    this.held = heldStart()
     this.colorBy = 'bhr'
     this.sort = 'length'
     this.decisions.clear()
@@ -1968,7 +2005,10 @@ export class App {
         mode: this.mode, codes: this.mode === 'huc' ? [...this.codes].sort() : [], walk: this.mode === 'walk' ? this.walkFrom : null, box: null,
         ...(this.mode === 'reach' ? { reaches: savedPicks(this.net, this.picks) } : {}),
       },
-      criteria: this.criteria, color_by: this.colorBy, sort: this.sort, sub: this.sub, decisions, edits: this.edits.toJSON(),
+      // the criteria as screened (a row that is off is null, or 0 for the site length: 0.3.0 reads the
+      // same), and the values the rows hold while off
+      criteria: this.criteria, held: { ...this.held },
+      color_by: this.colorBy, sort: this.sort, sub: this.sub, decisions, edits: this.edits.toJSON(),
     }
   }
 
@@ -1978,6 +2018,9 @@ export class App {
     const saved = s.area.mode
     this.mode = saved === 'box' ? 'reach' : MODES.some((m) => m.key === saved) ? saved : 'huc'
     this.criteria = { ...defaultCriteria(), ...s.criteria }
+    // a screening saved before 0.3.2 holds no values for its rows that are off, and its site length,
+    // 1,000 ft then, stays on
+    this.held = heldFrom(this.criteria, s.held)
     // a screening whose hidden settings differ from the starting values opens with them in view
     this.moreOpen = this.moreChanged() > 0
     this.colorBy = (['bhr', 'er', 'match'].includes(s.color_by) ? s.color_by : 'bhr') as ColorBy

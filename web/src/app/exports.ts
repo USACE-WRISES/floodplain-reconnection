@@ -5,6 +5,7 @@ import { latOf, lonOf, Q_UNSAMPLED, WHY, huc12Text, reachId } from '../data/unit
 import type { Edits, ReachEdit } from '../screen/edits'
 import { refOf, rowOf, type Network } from '../screen/model'
 import { flagTexts, FT_PER_M, MI_PER_M, QUALITY_LABEL, SQMI_PER_SQKM } from '../screen/format'
+import { readableHeld, type Held } from '../screen/rows'
 import { STAGE, type Criteria, type ScreenResult, type Site } from '../screen/screen'
 import { APP_NAME, APP_VERSION } from '../version'
 import { esc } from './html'
@@ -206,6 +207,8 @@ export interface SavedScreening {
     box: [number, number, number, number] | null, reaches?: { huc8: string, id: string }[]
   }
   criteria: Criteria
+  /** the Screen rows' values, kept while a row is off (0.3.2 on; screen/rows.ts) */
+  held?: Partial<Held>
   color_by: string
   sort: string
   sub: string
@@ -224,5 +227,6 @@ export function readSaved(text: string): SavedScreening {
     throw new Error('The file\'s study area is not readable.')
   }
   if (v.edits !== undefined && (typeof v.edits !== 'object' || v.edits === null || Array.isArray(v.edits))) throw new Error('The file\'s cross-section edits are not readable.')
+  if (v.held !== undefined && !readableHeld(v.held)) throw new Error('The file\'s criteria are not readable.')
   return v as SavedScreening
 }

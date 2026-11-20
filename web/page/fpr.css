@@ -65,7 +65,7 @@
   --fpr-hl: #c2410c;
   --font-head: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
   --font-body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
-  --pane-width: 360px;
+  --pane-width: 372px;
 }
 
 /* ============ 2. page ============ */
@@ -219,14 +219,20 @@ a { color: var(--fpr-accent); }
 .fpr-crit-line label { flex: 1; margin: 0; line-height: 1.3; }
 .fpr-crit input[type="number"] { width: 78px; font-size: 12.5px; padding: 2px 6px; text-align: right; }
 .fpr-crit input[type="checkbox"] { margin: 0; flex: none; }
-/* the box fits "10000" beside its arrows, the unit "sq mi", the count "123 sites"; the label column still
-   fits "Entrenchment ratio at least" on one line, on a phone too */
-.fpr-crit-row { display: grid; grid-template-columns: minmax(0, 1fr) 70px 30px 48px; gap: 4px; align-items: center; }
+/* a row: its on/off checkbox, its words, its box, the unit, the count (the owner, 2026-11-20). The box
+   fits "10000" with no spin arrows (the arrow keys still step it), the unit "sq mi", the count "123 sites";
+   the words column still fits "Entrenchment ratio at least" on one line, on a phone too */
+.fpr-crit-row { display: grid; grid-template-columns: 15px minmax(0, 1fr) 54px 30px 46px; gap: 4px; align-items: center; }
 .fpr-crit-row label { margin: 0; line-height: 1.3; }
-.fpr-crit-row input[type="number"] { width: 100%; }
+.fpr-crit-row input[type="number"] { width: 100%; appearance: textfield; -moz-appearance: textfield; }
+.fpr-crit-row input[type="number"]::-webkit-inner-spin-button,
+.fpr-crit-row input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .fpr-crit-row .fpr-unit { min-width: 0; }
-.fpr-left { text-align: right; font-weight: 600; color: var(--fpr-title); font-variant-numeric: tabular-nums; }
+/* a count longer than its column ("1,234 sites") runs left into the unit column's empty end */
+.fpr-left { text-align: right; font-weight: 600; color: var(--fpr-title); font-variant-numeric: tabular-nums; justify-self: end; width: max-content; }
 .fpr-crit.off label, .fpr-crit.off .fpr-left { color: #a7b0bd; }
+/* the sites row's count is the result, so it stays when the site length is off */
+#fpr-row-sites.off .fpr-left { color: var(--fpr-title); }
 .fpr-unit { color: var(--fpr-muted); font-size: 11.5px; min-width: 34px; }
 /* the last row's count reads "46 sites"; a setting's words and its info icon (the owner, 2026-11-20) */
 .fpr-left-unit { font-weight: 400; font-size: 11px; color: var(--fpr-muted); white-space: nowrap; }
@@ -256,7 +262,8 @@ a { color: var(--fpr-accent); }
 .fpr-actions.fpr-sticky { position: sticky; bottom: 0; z-index: 2; background: #fff; border-top: 1px solid var(--rule);
   margin: 12px -14px -16px; padding: 10px 14px 14px; border-radius: 0 0 8px 8px; }
 
-/* the histograms */
+/* the histograms, lined up with the rows' words (past the checkbox) */
+.fpr-hist-box { padding-left: 19px; }
 .fpr-hist { display: block; width: 100%; height: auto; margin: 3px 0 1px; }
 
 /* the shortlist */

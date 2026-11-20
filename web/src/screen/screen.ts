@@ -22,9 +22,11 @@ export interface Criteria {
 
 export interface Preset { id: string, label: string, criteria: Criteria }
 
+/** The site length starts off (minSiteFt 0: every run of passing reaches is a site; the owner,
+ * 2026-11-20): reaches run about 1,000 ft and over half are a little shorter (rows.ts SITE_FT). */
 const BASE: Criteria = {
   includeCaution: true, skipCanals: true, daMinSqmi: 2, daMaxSqmi: null, bhrMin: 1.5, countCapped: true,
-  erMin: 2.2, minSiteFt: 1000, gapReaches: 1,
+  erMin: 2.2, minSiteFt: 0, gapReaches: 1,
 }
 
 /** Starting values for the team to set in Task 2 (named by their numbers, not by condition). */

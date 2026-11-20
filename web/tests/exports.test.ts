@@ -84,6 +84,9 @@ describe('downloads', () => {
     expect(() => readSaved(JSON.stringify({ ...base, version: 2, area: { mode: 'circle', codes: [] } }))).toThrow()
     expect(() => readSaved(JSON.stringify({ ...base, version: 2, area: { mode: 'reach', codes: [], reaches: [{ id: 5 }] } }))).toThrow()
     expect(readSaved(JSON.stringify({ ...base, version: 2, area: { mode: 'box', codes: [], box: [-80, 39, -79, 40] } })).area.mode).toBe('box')
+    // the Screen rows' held values (0.3.2): read when they are numbers, refused when not
+    expect(readSaved(JSON.stringify({ ...base, version: 2, held: { bhrMin: 1.5, minSiteFt: 1000 } })).held?.bhrMin).toBe(1.5)
+    expect(() => readSaved(JSON.stringify({ ...base, version: 2, held: { bhrMin: 'high' } }))).toThrow()
     const ctx = context(true)
     const saved = readSaved(JSON.stringify({ ...base, version: 2, edits: ctx.edits.toJSON() }))
     const again = new Edits()
