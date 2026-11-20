@@ -2,8 +2,9 @@
 // and zoom animation behave as Leaflet's own vectors do):
 //
 // - the reach canvas strokes every reach in view, one path per style and width class, from the loaded
-//   files' typed arrays (each row has a style id, 0: not drawn). It repaints only when the view moves or
-//   the styles change;
+//   files' typed arrays (each row has a style id, 0: not drawn); a colored reach's path is stroked twice,
+//   a white edge under the line, so it stands out from the basemap. It repaints only when the view moves
+//   or the styles change;
 // - the highlight canvas, just above it, strokes the chosen site and the reach under the pointer, a few
 //   paths, so a hover never repaints the reaches (it used to, at 7 to 12 ms a repaint on a fast desktop
 //   with 80,000 reaches and several times that on a laptop screen at 125% or under the USACE network's
@@ -16,13 +17,26 @@ import { fileOf, refOf, rowOf, type Network, type Ref } from '../screen/model'
 
 export interface LineStyle {
   color: string
-  /** width at zoom 14, px */
+  /** width at zoom 14, px (a strong line's is STRONG_WIDER times that from STRONG_ZOOM in) */
   width: number
   dash?: number[]
   alpha?: number
   /** drawn after lower values */
   z: number
+  /** a colored reach (a ratio or a site): a white edge under it, and wider from STRONG_ZOOM in */
+  strong?: boolean
 }
+
+/** Colored reaches stand out from the basemap (the owner, 2026-11-20): wider from this zoom in, where
+ * the lines were thinnest (zoom 11 and out, with the whole network shown, keep their widths)... */
+const STRONG_ZOOM = 12
+const STRONG_WIDER = 1.2
+/** ...and a white edge under each, which adds this share of the line's width (both sides together),
+ * at most EDGE_MAX px: a thin line far out gets a thin edge. */
+const EDGE = '#ffffff'
+const EDGE_ALPHA = 0.9
+const EDGE_SHARE = 0.75
+const EDGE_MAX = 2
 
 /** The cell size of the hit grid, Web Mercator units (about 1.2 km at the equator). */
 const CELL = 1 / 32768
@@ -145,8 +159,8 @@ export class UnitLayer {
     return order >= 5 ? 2 : order >= 3 ? 1 : 0
   }
 
-  /** A row's line on a context translated to layer points (scale and origin: the map's at this zoom). */
-  private path(ctx: CanvasRenderingContext2D, ref: Ref, scale: number, ox: number, oy: number): void {
+  /** A row's line on a context or a path, in layer points (scale and origin: the map's at this zoom). */
+  private path(ctx: CanvasPath, ref: Ref, scale: number, ox: number, oy: number): void {
     const f = this.net.files[fileOf(ref)]
     if (!f) return
     const r = rowOf(ref)
@@ -187,18 +201,36 @@ export class UnitLayer {
       }
     })
     const keys = [...groups.keys()].sort((a, b) => this.styles[a >> 2].z - this.styles[b >> 2].z || a - b)
+    // each group's path is built once (a strong group's is stroked twice)
+    const paths = keys.map((key) => {
+      const p = new Path2D()
+      for (const ref of groups.get(key)!) this.path(p, ref, scale, ox, oy)
+      return p
+    })
+    const widths = keys.map((key) => {
+      const st = this.styles[key >> 2]
+      const wider = st.strong && zoom >= STRONG_ZOOM ? STRONG_WIDER : 1
+      return Math.max(0.6, (st.width + classBonus[key & 3]) * zf * wider)
+    })
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
-    for (const key of keys) {
+    // the white edges first, every one of them, so no edge cuts across a line where two reaches meet
+    ctx.strokeStyle = EDGE
+    ctx.globalAlpha = EDGE_ALPHA
+    ctx.setLineDash([])
+    keys.forEach((key, i) => {
+      if (!this.styles[key >> 2].strong) return
+      ctx.lineWidth = widths[i] + Math.min(EDGE_MAX, widths[i] * EDGE_SHARE)
+      ctx.stroke(paths[i])
+    })
+    keys.forEach((key, i) => {
       const st = this.styles[key >> 2]
-      ctx.beginPath()
-      for (const ref of groups.get(key)!) this.path(ctx, ref, scale, ox, oy)
       ctx.globalAlpha = st.alpha ?? 1
       ctx.strokeStyle = st.color
-      ctx.lineWidth = Math.max(0.6, (st.width + classBonus[key & 3]) * zf)
+      ctx.lineWidth = widths[i]
       ctx.setLineDash(st.dash ?? [])
-      ctx.stroke()
-    }
+      ctx.stroke(paths[i])
+    })
     ctx.globalAlpha = 1
     ctx.setLineDash([])
   }

@@ -328,13 +328,14 @@ export class App {
     }
     add('out', { color: '#7d8ba1', width: 1.1, alpha: 0.4, z: 1 })
     add('nod', { color: NO_DATA, width: 1.4, z: 3 })
+    // the colored reaches are strong (a white edge, wider zoomed in: unitLayer.ts); the grays recede
     for (let b = 0; b < BINS; b++) {
-      add(`s${b}`, { color: binColor(b), width: 2.6, z: 6 })
-      add(`d${b}`, { color: binColor(b), width: 2.4, dash: [5, 4], z: 5 })
+      add(`s${b}`, { color: binColor(b), width: 2.6, z: 6, strong: true })
+      add(`d${b}`, { color: binColor(b), width: 2.4, dash: [5, 4], z: 5, strong: true })
     }
-    add('cap', { color: AT_CAP, width: 2.6, z: 6 })
-    add('capd', { color: AT_CAP, width: 2.4, dash: [5, 4], z: 5 })
-    add('m-site', { color: MATCH.site, width: 3.4, z: 9 })
+    add('cap', { color: AT_CAP, width: 2.6, z: 6, strong: true })
+    add('capd', { color: AT_CAP, width: 2.4, dash: [5, 4], z: 5, strong: true })
+    add('m-site', { color: MATCH.site, width: 3.4, z: 9, strong: true })
     add('m-other', { color: MATCH.other, width: 1.8, z: 4 })
     this.styleTable = t
     this.styleIds = ids
