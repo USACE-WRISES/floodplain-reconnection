@@ -904,7 +904,7 @@ export class App {
     return out.sort()
   }
 
-  /** The map framed on the study area. */
+  /** The map framed on the study area, in the part of the map the pane leaves free. */
   fitArea(): void {
     // Web Mercator units: y grows southward, so the north edge is the smallest y
     let west = Infinity
@@ -925,9 +925,35 @@ export class App {
     })
     if (!Number.isFinite(west)) return
     const bounds = L.latLngBounds([latOf(south), lonOf(west)], [latOf(north), lonOf(east)])
-    // never wider than the study area's reaches show: an area too big to fit opens on its middle
-    if (this.map.getBoundsZoom(bounds, false, L.point(430, 60)) < AREA_ZOOM) this.map.setView(bounds.getCenter(), AREA_ZOOM)
-    else this.map.fitBounds(bounds, { paddingTopLeft: [400, 30], paddingBottomRight: [30, 30] })
+    const pad = this.fitPadding(30)
+    // never wider than the study area's reaches show: an area too big to fit opens on its middle, which
+    // sits in the middle of the free part of the map
+    if (this.map.getBoundsZoom(bounds, false, pad.paddingTopLeft.add(pad.paddingBottomRight)) < AREA_ZOOM) {
+      const shift = pad.paddingTopLeft.subtract(pad.paddingBottomRight).divideBy(2)
+      this.map.setView(this.map.unproject(this.map.project(bounds.getCenter(), AREA_ZOOM).subtract(shift), AREA_ZOOM), AREA_ZOOM)
+    } else this.map.fitBounds(bounds, pad)
+  }
+
+  /** The padding that keeps a fit clear of the workflow pane: beside it on a wide screen, and above it
+   * where it is a bottom sheet (fpr.css, narrow screens). The sheet's full height is kept clear, since it
+   * grows as the steps change. A fit with no room left zooms all the way in (0.3.0 on a phone, where the
+   * side pane's 400 px were wider than the map), so a pane that leaves the map almost no room is ignored. */
+  private fitPadding(edge: number): { paddingTopLeft: L.Point, paddingBottomRight: L.Point } {
+    const m = this.map.getContainer().getBoundingClientRect()
+    const p = this.pane.getBoundingClientRect()
+    const gap = 30
+    let left = edge
+    let bottom = edge
+    if (p.width > 0 && p.width < m.width / 2) left = Math.max(edge, p.right - m.left + gap)
+    else if (p.width > 0) {
+      const tallest = parseFloat(getComputedStyle(this.pane).maxHeight)
+      const top = Number.isFinite(tallest) ? Math.min(p.top, p.bottom - tallest) : p.top
+      bottom = Math.max(edge, m.bottom - top + gap)
+    }
+    const tl = L.point(left, edge)
+    const br = L.point(edge, bottom)
+    if (m.width - tl.x - br.x < 80 || m.height - tl.y - br.y < 80) return { paddingTopLeft: L.point(edge, edge), paddingBottomRight: L.point(edge, edge) }
+    return { paddingTopLeft: tl, paddingBottomRight: br }
   }
 
   private clearArea(): void {
@@ -1554,8 +1580,7 @@ export class App {
         e = Math.max(e, f.box[b + 2])
         s2 = Math.max(s2, f.box[b + 3])
       }
-      this.map.fitBounds(L.latLngBounds([latOf(s2), lonOf(w)], [latOf(n), lonOf(e)]),
-        { paddingTopLeft: [400, 60], paddingBottomRight: [60, 60], maxZoom: 16 })
+      this.map.fitBounds(L.latLngBounds([latOf(s2), lonOf(w)], [latOf(n), lonOf(e)]), { ...this.fitPadding(60), maxZoom: 16 })
     }
   }
 
@@ -1928,7 +1953,9 @@ export class App {
     this.dirty = false
     this.goStep(1)
     this.recompute()
-    this.map.setView([START.lat, START.lon], START.zoom)
+    // at once: Open frames the study area right after, and Leaflet drops a view set while a zoom
+    // animates (from zoom 6 to 9 the jump to START animates)
+    this.map.setView([START.lat, START.lon], START.zoom, { animate: false })
   }
 
   saved(): SavedScreening {

@@ -9,6 +9,8 @@
 - Sites view: screened-out reaches draw bolder; hovering one says why.
 - Screen: a last row counts the sites the passing reaches make.
 - Info icons explain the shortest site and the settings under More settings.
+- On a phone, Open and Zoom to area no longer zoom in to street level.
+- Open no longer leaves the map on the whole country at times.
 
 ## v0.3.0 (2026-11-19)
 - Reaches: click reaches, or hold Shift and drag boxes, to screen known sites.
