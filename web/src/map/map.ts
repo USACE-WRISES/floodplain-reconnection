@@ -17,9 +17,10 @@ const USGS_IMAGERY_ATTR = 'USDA, USGS The National Map: Orthoimagery'
 /** The view the app opens on: the lower 48. */
 export const START = { lat: 38.5, lon: -95.5, zoom: 5 }
 
-/** Panes: the outlines under the reaches, the hovered reach and the chosen site just over them (a canvas
- * of their own, so a hover never repaints the reaches), the cross-sections over those, the markers on top. */
-export const PANES = { outlines: 'fprOutlines', units: 'fprUnits', highlight: 'fprHighlight', ticks: 'fprTicks', marks: 'fprMarks' }
+/** Panes: the outlines and the flood-prone band under the reaches, the hovered reach and the chosen site
+ * just over them (a canvas of their own, so a hover never repaints the reaches), the cross-sections over
+ * those, the markers on top. */
+export const PANES = { outlines: 'fprOutlines', flood: 'fprFlood', units: 'fprUnits', highlight: 'fprHighlight', ticks: 'fprTicks', marks: 'fprMarks' }
 
 function usgs(url: string, attribution = USGS_ATTR): L.TileLayer {
   return L.tileLayer(url, { attribution, maxNativeZoom: 16, maxZoom: 19 })
@@ -43,6 +44,8 @@ export interface AppMap {
   picks: L.LayerGroup
   /** the Cross-sections layer (off at the start; the app puts the tick canvas in it) */
   sections: L.LayerGroup
+  /** the Flood-prone area layer (off at the start; the app puts the flood canvas in it) */
+  flood: L.LayerGroup
   /** the basemap shown */
   basemap(): Basemap
 }
@@ -57,16 +60,20 @@ export function makeMap(box: HTMLElement): AppMap {
   const topo = basemapLayer('topo')
   topo.addTo(map)
   Object.assign(map.createPane(PANES.outlines).style, { zIndex: '380' })
+  Object.assign(map.createPane(PANES.flood).style, { zIndex: '410', pointerEvents: 'none' })
   Object.assign(map.createPane(PANES.units).style, { zIndex: '420', pointerEvents: 'none' })
   Object.assign(map.createPane(PANES.highlight).style, { zIndex: '430', pointerEvents: 'none' })
   Object.assign(map.createPane(PANES.ticks).style, { zIndex: '440', pointerEvents: 'none' })
   Object.assign(map.createPane(PANES.marks).style, { zIndex: '640' })
   const coverage = L.layerGroup().addTo(map)
   const picks = L.layerGroup().addTo(map)
-  // where each reach's cross-sections are (the owner, 2026-11-20): off at the start
+  // where each reach's cross-sections are, and its flood-prone width as a band (the owner, 2026-11-20):
+  // both off at the start
   const sections = L.layerGroup()
+  const flood = L.layerGroup()
   const layers = L.control.layers({ 'USGS Topo': topo, 'USGS Imagery': imagery },
-    { 'Where reaches are built': coverage, 'Watersheds (HUC12)': picks, 'Cross-sections': sections }, { position: 'topright' }).addTo(map)
+    { 'Where reaches are built': coverage, 'Watersheds (HUC12)': picks, 'Cross-sections': sections, 'Flood-prone area': flood },
+    { position: 'topright' }).addTo(map)
   // under the Layers control and over the legend (a top corner stacks its controls as they are added)
   L.control.zoom({ position: 'topright', zoomInText: '+', zoomOutText: '-' }).addTo(map)
   L.control.scale({ position: 'bottomright', metric: true, imperial: true }).addTo(map)
@@ -81,7 +88,7 @@ export function makeMap(box: HTMLElement): AppMap {
   const control = new Legend({ position: 'topright' })
   control.addTo(map)
   const legend = control.getContainer() as HTMLElement
-  return { map, layers, legend, coverage, picks, sections, basemap: () => (map.hasLayer(imagery) ? 'imagery' : 'topo') }
+  return { map, layers, legend, coverage, picks, sections, flood, basemap: () => (map.hasLayer(imagery) ? 'imagery' : 'topo') }
 }
 
 /** A canvas renderer for outlines (many polygons, clickable). */

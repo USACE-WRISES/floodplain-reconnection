@@ -21,7 +21,7 @@ import type { Basemap } from '../map/map'
 import type { Edits, SectionEdit } from '../screen/edits'
 import { FT_PER_M, ratio } from '../screen/format'
 import { medianProfile, sectionPulls } from '../xs/grid'
-import { pullable, ratioMedian, reachSections, scored, type ReachSection } from '../xs/reach'
+import { floodWidthM, pullable, ratioMedian, reachSections, scored, type ReachSection } from '../xs/reach'
 import { defaultHeights, measure, profileFrom, type Measured, type Profile } from '../xs/section'
 import { medianCandidate } from '../xs/xsreach'
 import { esc } from './html'
@@ -241,7 +241,7 @@ export class ReachExplorer {
     try {
       const { sectionLines } = await import('../xs/sectionLines')
       const lines = await sectionLines(this.sections, (vpu, id) => sectionPulls(this.host.staf, vpu, id))
-      if (lines) marks = lines.map((l, j) => (l ? markOf(l.mid, l.a, l.b, l.full) : along[j]))
+      if (lines) marks = lines.map((l, j) => (l ? markOf(l.mid, l.a, l.b, l.full, l.half) : along[j]))
     } catch {
       // the places along the line stay
     }
@@ -372,7 +372,10 @@ export class ReachExplorer {
     const ready = g?.kind === 'ready'
     const mine = Boolean(e) || cur.mine
     const station = (x: ReachSection) => `${this.stationFt(x).toLocaleString('en-US')} ft`
-    // the section buttons: the one shown, the edited ones, the stored profile, the unmeasured
+    // the section buttons: the one shown, the edited ones, the stored profile, the unmeasured; and each
+    // section's flood-prone width for the small map, from the same numbers (a height being dragged
+    // reshapes the area at once)
+    const widths: (number | null)[] = this.sections.map(() => null)
     this.root.querySelectorAll<HTMLButtonElement>('[data-xsx-pick] [data-xsx-go]').forEach((b) => {
       const j = Number(b.dataset.xsxGo)
       const sj = this.sections[j]
@@ -391,7 +394,9 @@ export class ReachExplorer {
       b.setAttribute('aria-label', label)
       // the small map's number reads as its button does
       this.minimap?.flag(j, { on, edited: yours, muted: !v, stored: sj.stored, title: label })
+      widths[j] = floodWidthM(sj, v ? v.fpw : null)
     })
+    this.minimap?.setWidths(widths)
     const tags = [this.i === this.def ? 'nearest the reach medians' : '', s.stored ? 'stored profile' : '', mine ? 'your heights' : '']
     this.q<HTMLElement>('[data-xsx-label]').textContent = [`${station(s)} from the upstream end`, ...tags.filter(Boolean)].join(' · ')
     const ftOf = (v: number | null, k: number) => (v === null ? 'n/a' : `${((v / k) * FT_PER_M).toFixed(1)} ft`)

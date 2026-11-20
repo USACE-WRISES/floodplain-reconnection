@@ -4,10 +4,14 @@
 // along the reach's line (map/along.ts) and moves them to the grid's exact places once those are read
 // (xs/sectionLines.ts).
 //
+// Under them lies the reach's flood-prone area: each section's flood-prone width across the stream, the
+// ends joined from section to section (along.ts floodRing), with the shown section's own width drawn
+// strong. The grid holds widths, not edges, so each width is centered on the section's point.
+//
 // The popup scrolls, so the wheel scrolls it rather than zooming the map, a finger on a phone scrolls it
 // too (a pinch zooms), and the map takes no keyboard stop: the numbered buttons are the keyboard's way.
 import L from 'leaflet'
-import type { LatLon, SectionMark } from '../map/along'
+import { floodRing, spanOf, type LatLon, type SectionMark } from '../map/along'
 import { basemapLayer, type Basemap } from '../map/map'
 
 export interface SectionMapOptions {
@@ -29,8 +33,14 @@ export class SectionMap {
   private readonly markers: (L.Marker | null)[] = []
   private readonly states = new Map<number, MarkState>()
   private marks: (SectionMark | null)[]
+  /** each section's flood-prone width, m (null: none, or another low spot's) */
+  private widths: (number | null)[] = []
+  private readonly area: L.Polygon
   private readonly widthUnder: L.Polyline
   private readonly widthLine: L.Polyline
+  private readonly spanUnder: L.Polyline
+  private readonly spanLine: L.Polyline
+  private readonly key: HTMLElement
   private readonly ro: ResizeObserver
   private fitted = false
   private shown = -1
@@ -50,12 +60,30 @@ export class SectionMap {
     // the tiles' credit, small, in the corner
     L.control.attribution({ position: 'bottomright', prefix: false }).addTo(this.map)
     basemapLayer(opts.basemap).addTo(this.map)
+    // the flood-prone area first, so the reach and its sections lie over it (the main map's band colors)
+    this.area = L.polygon([], { color: '#1f6fc0', weight: 1.2, opacity: 0.9, fillColor: '#4da3ff', fillOpacity: 0.3,
+      lineJoin: 'round', interactive: false }).addTo(this.map)
     if (opts.line.length >= 2) {
       L.polyline(opts.line, { color: '#ffffff', weight: 7, opacity: 0.9, interactive: false }).addTo(this.map)
       L.polyline(opts.line, { color: '#1f2937', weight: 3.5, interactive: false }).addTo(this.map)
     }
-    this.widthUnder = L.polyline([], { color: '#ffffff', weight: 6, opacity: 0.9, interactive: false }).addTo(this.map)
-    this.widthLine = L.polyline([], { color: '#2f4b7c', weight: 3, interactive: false }).addTo(this.map)
+    // the shown section: its sampled line, thin, and its flood-prone width over it, strong
+    this.widthUnder = L.polyline([], { color: '#ffffff', weight: 4, opacity: 0.9, interactive: false }).addTo(this.map)
+    this.widthLine = L.polyline([], { color: '#2f4b7c', weight: 2, interactive: false }).addTo(this.map)
+    this.spanUnder = L.polyline([], { color: '#ffffff', weight: 7, opacity: 0.95, lineCap: 'butt', interactive: false }).addTo(this.map)
+    this.spanLine = L.polyline([], { color: '#2f4b7c', weight: 4, lineCap: 'butt', interactive: false }).addTo(this.map)
+    // what the blue area is, small, in the other corner
+    const Key = L.Control.extend({
+      onAdd: () => {
+        const div = L.DomUtil.create('div', 'fpr-xsm-key')
+        div.innerHTML = '<span class="fpr-xsm-key-sw"></span>Flood-prone area'
+        return div
+      },
+    })
+    const key = new Key({ position: 'bottomleft' })
+    key.addTo(this.map)
+    this.key = key.getContainer() as HTMLElement
+    this.key.hidden = true
     this.drawMarks()
     // the popup lays out after this: the map fits once it has a size, never at 0 by 0
     this.ro = new ResizeObserver(() => this.resized())
@@ -69,7 +97,7 @@ export class SectionMap {
     this.drawMarks()
   }
 
-  /** The section shown: its number on top, and its sampled width drawn when known. */
+  /** The section shown: its number on top, its sampled line drawn when known, and its flood-prone width. */
   select(i: number): void {
     if (this.dead) return
     this.shown = i
@@ -77,8 +105,17 @@ export class SectionMap {
     const ends = mark?.ends ?? []
     this.widthUnder.setLatLngs(ends)
     this.widthLine.setLatLngs(ends)
+    this.drawSpan()
     this.markers.forEach((m, j) => m?.setZIndexOffset(j === i ? 1000 : 0))
     if (this.fitted && mark && !this.map.getBounds().contains(mark.at)) this.map.panTo(mark.at, { animate: false })
+  }
+
+  /** Each section's flood-prone width, m (null: none, or another low spot's): the area again. Cheap, so a
+   * height being dragged in the chart reshapes it at once. */
+  setWidths(widths: (number | null)[]): void {
+    if (this.dead) return
+    this.widths = widths
+    this.drawArea()
   }
 
   /** A section's number shown as its button is: shown, edited, unmeasured, stored. */
@@ -127,7 +164,27 @@ export class SectionMap {
       this.markers.push(marker)
     })
     for (const [j, s] of this.states) this.applyState(j, s)
+    // the area follows the sections to their exact places
+    this.drawArea()
     if (this.shown >= 0) this.select(this.shown)
+  }
+
+  /** The flood-prone area from the sections' widths, its key shown while there is one, and the shown
+   * section's width. */
+  private drawArea(): void {
+    const ring = floodRing(this.marks, this.widths)
+    this.area.setLatLngs(ring)
+    this.key.hidden = ring.length === 0
+    this.drawSpan()
+  }
+
+  /** The shown section's flood-prone width across its line (none where it has no width). */
+  private drawSpan(): void {
+    const mark = this.shown >= 0 ? this.marks[this.shown] ?? null : null
+    const w = this.shown >= 0 ? this.widths[this.shown] ?? null : null
+    const span = mark && w !== null && w > 0 ? spanOf(mark, w) : []
+    this.spanUnder.setLatLngs(span)
+    this.spanLine.setLatLngs(span)
   }
 
   private applyState(j: number, s: MarkState): void {

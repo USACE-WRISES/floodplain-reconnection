@@ -34,6 +34,11 @@ describe('lineOf', () => {
     expect(lineOf({ x: X, y: Y, nx: 1, ny: 0 }, null).full).toBe(false)
     expect(lineOf({ x: X, y: Y, nx: 1, ny: 0 }, 0).full).toBe(false)
   })
+
+  it('says how far each end lies from the middle', () => {
+    expect(lineOf({ x: X, y: Y, nx: 1, ny: 0 }, 250).half).toBe(250)
+    expect(lineOf({ x: X, y: Y, nx: 1, ny: 0 }, null).half).toBe(10)
+  })
 })
 
 describe('sectionLines', () => {

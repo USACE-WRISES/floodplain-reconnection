@@ -34,6 +34,20 @@ export function scored(s: ReachSection): boolean {
   return SCORED.has(s.num.status) && s.num.er !== null && s.num.bhr !== null
 }
 
+/** A section's flood-prone width for the map, m (fpw10: m x 10, the grid's, an edit's or one being
+ * dragged): null when it has none, or when its lowest ground lies away from this stream, farther than
+ * half the width and 15 m, so the width is another low spot's (the owner, 2026-11-20). */
+export function floodWidthM(s: ReachSection, fpw10: number | null): number | null {
+  if (fpw10 === null || !(fpw10 > 0)) return null
+  const w = fpw10 / 10
+  const d = s.det
+  if (d && d.thalwegI !== null && d.nPts > 1) {
+    const t = -d.wide + d.thalwegI * ((2 * d.wide) / (d.nPts - 1))
+    if (Math.abs(t) > Math.max(w / 2, 15)) return null
+  }
+  return w
+}
+
 /** Whether a section can be pulled from USGS 3DEP: its tiles and read grids are recorded. */
 export function pullable(s: ReachSection): boolean {
   return Boolean(s.det && s.det.tiles && s.det.reads.length && s.num.res > 0)

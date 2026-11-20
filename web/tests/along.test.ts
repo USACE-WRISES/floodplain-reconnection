@@ -6,7 +6,7 @@ import { asyncBufferFromFile, type AsyncBuffer } from 'hyparquet'
 import { beforeAll, describe, expect, it } from 'vitest'
 import type { DataSource } from '../src/data/source'
 import { loadUnits, type UnitFile } from '../src/data/units'
-import { eachTick, latLngsOf, markOf, marksAlong, sectionsAlong } from '../src/map/along'
+import { eachTick, floodRing, latLngsOf, markOf, marksAlong, sectionsAlong, spanOf } from '../src/map/along'
 import { network } from './net'
 
 /** The places and directions sectionsAlong wrote, as [x, y, ux, uy] rows. */
@@ -101,13 +101,55 @@ describe('marks', () => {
   })
 
   it('from the exact ends: the angle on the screen, and the ends when the width is known', () => {
-    expect(markOf([0, 0], [0, -1], [0, 1], true).angle).toBeCloseTo(0)
+    expect(markOf([0, 0], [0, -1], [0, 1], true, 100).angle).toBeCloseTo(0)
     // north to south: y grows southward on the screen
-    expect(markOf([0, 0], [1, 0], [-1, 0], true).angle).toBeCloseTo(Math.PI / 2)
-    expect(markOf([0, 0], [0, -1], [0, 1], true).ends).toEqual([[0, -1], [0, 1]])
-    expect(markOf([0, 0], [0, -1], [0, 1], false).ends).toBeNull()
+    expect(markOf([0, 0], [1, 0], [-1, 0], true, 100).angle).toBeCloseTo(Math.PI / 2)
+    expect(markOf([0, 0], [0, -1], [0, 1], true, 100).ends).toEqual([[0, -1], [0, 1]])
+    expect(markOf([0, 0], [0, -1], [0, 1], false, 100).ends).toBeNull()
+    // a meter across: toward the +station end, over the half-length
+    expect(markOf([0, 0], [0, -1], [0, 1], true, 100).perM).toEqual([0, 0.01])
   })
 
+  it('measure a meter across the stream toward its left bank', () => {
+    // flowing east: the left bank is north, and a meter is 1 / 111,319 of a degree of latitude
+    const east = marksAlong([0.25, 0.2501], [0.4, 0.4], 0, 2, 1)[0]!
+    expect(east.perM[0]).toBeCloseTo(1 / 111319.49, 12)
+    expect(east.perM[1]).toBeCloseTo(0, 12)
+    // flowing north: the left bank is west, a meter of longitude wider by 1 / cos(latitude)
+    const north = marksAlong([0.25, 0.25], [0.4, 0.3999], 0, 2, 1)[0]!
+    const lat = (north.at[0] * Math.PI) / 180
+    expect(north.perM[0]).toBeCloseTo(0, 12)
+    expect(north.perM[1]).toBeCloseTo(-1 / (111319.49 * Math.cos(lat)), 9)
+  })
+})
+
+describe('the flood-prone area', () => {
+  /** A section on a line due east at (0, lon): a meter is 0.001 of a degree here, for easy numbers. */
+  const at = (lon: number) => ({ at: [0, lon] as [number, number], angle: Math.PI / 2, ends: null, exact: false, perM: [0.001, 0] as [number, number] })
+
+  it('puts a width half to each side, right bank first', () => {
+    const [r, l] = spanOf(at(5), 20)
+    expect(r).toEqual([-0.01, 5])
+    expect(l).toEqual([0.01, 5])
+  })
+
+  it('joins the widths down one bank and back up the other', () => {
+    const ring = floodRing([at(0), at(1), at(2)], [10, 20, 30])
+    expect(ring).toEqual([[-0.005, 0], [-0.01, 1], [-0.015, 2], [0.015, 2], [0.01, 1], [0.005, 0]])
+  })
+
+  it('joins across a section with no width or no place', () => {
+    const ring = floodRing([at(0), at(1), null, at(3)], [10, null, 40, 30])
+    expect(ring.map((p) => p[1])).toEqual([0, 3, 3, 0])
+  })
+
+  it('draws nothing for fewer than two widths', () => {
+    expect(floodRing([at(0), at(1)], [10, null])).toEqual([])
+    expect(floodRing([], [])).toEqual([])
+  })
+})
+
+describe('latLngsOf', () => {
   it('a line in lat, lon', () => {
     const line = latLngsOf([0.5, 0.75], [0.5, 0.5], 0, 2)
     expect(line[0][0]).toBeCloseTo(0)

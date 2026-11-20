@@ -1,4 +1,4 @@
-// The reaches on the map, in three canvases (Leaflet canvas renderers with draws of their own, so panning
+// The reaches on the map, in four canvases (Leaflet canvas renderers with draws of their own, so panning
 // and zoom animation behave as Leaflet's own vectors do):
 //
 // - the reach canvas strokes every reach in view, one path per style and width class, from the loaded
@@ -10,14 +10,18 @@
 //   with 80,000 reaches and several times that on a laptop screen at 125% or under the USACE network's
 //   browser isolation);
 // - the tick canvas, the Cross-sections layer (the owner, 2026-11-20: off at the start, turned on in the
-//   Layers control), marks every section of the drawn reaches across the line, from TICK_ZOOM in. Turning
-//   it on or off never repaints the reaches.
+//   Layers control), marks every section of the drawn reaches across the line, from TICK_ZOOM in;
+// - the flood canvas, the Flood-prone area layer (the owner, 2026-11-20, off at the start too), under the
+//   reaches: a band along each drawn reach as wide as its flood-prone width (flood.ts), from FLOOD_ZOOM in.
 //
-// No canvas takes pointer events: the app finds the reach under the pointer here (`hit`, a grid of
-// cells over the rows' extents), so the watershed outlines under them stay clickable.
+// Turning a layer on or off never repaints the reaches. No canvas takes pointer events: the app finds the
+// reach under the pointer here (`hit`, a grid of cells over the rows' extents), so the watershed outlines
+// under them stay clickable.
 import L from 'leaflet'
+import type { UnitFile } from '../data/units'
 import { fileOf, refOf, rowOf, type Network, type Ref } from '../screen/model'
 import { eachTick } from './along'
+import { bandWidths, FLOOD_ZOOM, metersPerPixel } from './flood'
 
 export interface LineStyle {
   color: string
@@ -99,15 +103,11 @@ const TICK_WIDTH = 1.5
 const TICK_HALO = 1.25
 const TICK_COLOR = '#1f2937'
 
-const TickCanvas = (L.Canvas as any).extend({
-  // Leaflet makes a new canvas each time the layer is put on the map
-  _initContainer(this: any) {
-    ;(L.Canvas as any).prototype._initContainer.call(this)
-    this._container.classList.add('fpr-unit-canvas')
-  },
-  // below TICK_ZOOM the canvas keeps no pixels (one the map's size, at twice the pixels, takes tens of MB)
-  _update(this: any) {
-    if (this._map.getZoom() >= TICK_ZOOM || this._map._animatingZoom) {
+/** A layer canvas's `_update` that keeps no pixels below its zoom (a canvas the map's size, at twice the
+ * pixels, takes tens of MB). */
+function updateFrom(minZoom: number): (this: any) => void {
+  return function (this: any): void {
+    if (this._map.getZoom() >= minZoom || this._map._animatingZoom) {
       update.call(this)
       return
     }
@@ -115,11 +115,43 @@ const TickCanvas = (L.Canvas as any).extend({
     this._container.width = 0
     this._container.height = 0
     this.fire('update')
+  }
+}
+
+const TickCanvas = (L.Canvas as any).extend({
+  // Leaflet makes a new canvas each time the layer is put on the map
+  _initContainer(this: any) {
+    ;(L.Canvas as any).prototype._initContainer.call(this)
+    this._container.classList.add('fpr-unit-canvas')
   },
+  _update: updateFrom(TICK_ZOOM),
   _draw(this: any) {
     this.options.owner.drawTicks(this._ctx, this._bounds, this._map)
   },
 })
+
+/** The flood-prone band: light blue over a darker edge, drawn opaque on a canvas that has one opacity, so
+ * bands that overlap at a junction show no darker seams and their edges merge into one. */
+const FLOOD_FILL = '#4da3ff'
+const FLOOD_EDGE = '#1f6fc0'
+/** the edge's width each side, px */
+const FLOOD_EDGE_PX = 1
+const FLOOD_OPACITY = '0.4'
+
+const FloodCanvas = (L.Canvas as any).extend({
+  _initContainer(this: any) {
+    ;(L.Canvas as any).prototype._initContainer.call(this)
+    this._container.classList.add('fpr-unit-canvas')
+    this._container.style.opacity = FLOOD_OPACITY
+  },
+  _update: updateFrom(FLOOD_ZOOM),
+  _draw(this: any) {
+    this.options.owner.drawFlood(this._ctx, this._bounds, this._map)
+  },
+})
+
+/** The panes of the four canvases (map.ts PANES). */
+export interface UnitPanes { units: string, highlight: string, ticks: string, flood: string }
 
 /** Line widths grow with the zoom. */
 function zoomFactor(zoom: number): number {
@@ -148,26 +180,45 @@ export class UnitLayer {
   private pendingHighlight = 0
   private tickCanvas: any
   private pendingTicks = 0
+  private floodCanvas: any
+  private pendingFlood = 0
+  /** each file's band widths (flood.ts), dropped when the widths change (floodChanged) */
+  private bands = new WeakMap<UnitFile, { a: Float32Array, b: Float32Array }>()
   /** Reach canvas repaints so far (the app's debug handle reads it). */
   redraws = 0
   /** Tick canvas repaints so far, and the ticks the last one drew (the debug handle reads them). */
   tickDraws = 0
   ticksDrawn = 0
+  /** Flood canvas repaints so far, and the last one's time, ms (the debug handle reads them). */
+  floodDraws = 0
+  floodMs = 0
 
-  constructor(private readonly map: L.Map, private readonly net: Network, pane: string, highlightPane: string, ticksPane: string) {
-    this.renderer = new ReachCanvas({ pane, padding: PADDING, owner: this })
+  constructor(private readonly map: L.Map, private readonly net: Network, panes: UnitPanes) {
+    this.renderer = new ReachCanvas({ pane: panes.units, padding: PADDING, owner: this })
     this.renderer.addTo(map)
     this.renderer._container.classList.add('fpr-unit-canvas')
-    this.highlighter = new HighlightCanvas({ pane: highlightPane, padding: PADDING, owner: this })
+    this.highlighter = new HighlightCanvas({ pane: panes.highlight, padding: PADDING, owner: this })
     this.highlighter.addTo(map)
     this.highlighter._container.classList.add('fpr-unit-canvas')
     // made here, put on the map by the Layers control (off at the start)
-    this.tickCanvas = new TickCanvas({ pane: ticksPane, padding: PADDING, owner: this })
+    this.tickCanvas = new TickCanvas({ pane: panes.ticks, padding: PADDING, owner: this })
+    this.floodCanvas = new FloodCanvas({ pane: panes.flood, padding: PADDING, owner: this })
   }
 
   /** The Cross-sections layer, for the Layers control. */
   get ticks(): L.Layer {
     return this.tickCanvas
+  }
+
+  /** The Flood-prone area layer, for the Layers control. */
+  get flood(): L.Layer {
+    return this.floodCanvas
+  }
+
+  /** The reaches' flood-prone widths changed (a cross-section edit): the band again. */
+  floodChanged(): void {
+    this.bands = new WeakMap()
+    this.redrawFlood()
   }
 
   /** The style table (index 0 is "not drawn") and each loaded file's row style ids. The same styles as
@@ -181,6 +232,7 @@ export class UnitLayer {
     this.redraw()
     this.redrawHighlight()
     this.redrawTicks()
+    this.redrawFlood()
   }
 
   /** The chosen site's rows (none: no site). */
@@ -221,6 +273,15 @@ export class UnitLayer {
     this.pendingTicks = requestAnimationFrame(() => {
       this.pendingTicks = 0
       if (this.tickCanvas._map) this.tickCanvas._redraw()
+    })
+  }
+
+  /** The flood-prone band, at the next frame (nothing while the layer is off). */
+  private redrawFlood(): void {
+    if (this.pendingFlood || !this.floodCanvas._map) return
+    this.pendingFlood = requestAnimationFrame(() => {
+      this.pendingFlood = 0
+      if (this.floodCanvas._map) this.floodCanvas._redraw()
     })
   }
 
@@ -385,6 +446,81 @@ export class UnitLayer {
     ctx.strokeStyle = TICK_COLOR
     ctx.lineWidth = TICK_WIDTH
     ctx.stroke(path)
+  }
+
+  /** The Flood-prone area layer: each drawn reach with a width as a band along its line, its width taken
+   * along the line from its upstream end's to its downstream end's (flood.ts), each segment stroked with
+   * round caps. Segments of about the same width share a path: the edges first, then the fills, so
+   * neighbors' edges merge into one. */
+  drawFlood(ctx: CanvasRenderingContext2D, bounds: L.Bounds, map: L.Map): void {
+    const zoom = map.getZoom()
+    if (zoom < FLOOD_ZOOM) return
+    const t0 = performance.now()
+    this.floodDraws++
+    const scale = 256 * Math.pow(2, zoom)
+    const origin = map.getPixelOrigin()
+    const ox = origin.x
+    const oy = origin.y
+    // a band reaches past its line's box by half its width
+    const pad = 256
+    const x0 = (bounds.min!.x - pad + ox) / scale
+    const y0 = (bounds.min!.y - pad + oy) / scale
+    const x1 = (bounds.max!.x + pad + ox) / scale
+    const y1 = (bounds.max!.y + pad + oy) / scale
+    // the scale across a view barely changes with the latitude
+    const pxPerM = 1 / metersPerPixel(map.getCenter().lat, zoom)
+    // paths by width, to the half pixel
+    const paths = new Map<number, Path2D>()
+    this.net.files.forEach((f, fi) => {
+      const ids = this.ids[fi]
+      if (!ids) return
+      let band = this.bands.get(f)
+      if (!band) {
+        band = bandWidths(f)
+        this.bands.set(f, band)
+      }
+      for (let r = 0; r < f.rows; r++) {
+        const wa = band.a[r]
+        const wb = band.b[r]
+        if (!ids[r] || !(wa > 0) || !(wb > 0)) continue
+        const k = r * 4
+        if (f.box[k] > x1 || f.box[k + 2] < x0 || f.box[k + 1] > y1 || f.box[k + 3] < y0) continue
+        const a = f.off[r]
+        const e = f.off[r + 1]
+        if (e - a < 2) continue
+        let total = 0
+        for (let v = a; v < e - 1; v++) total += Math.hypot(f.mx[v + 1] - f.mx[v], f.my[v + 1] - f.my[v])
+        let run = 0
+        for (let v = a; v < e - 1; v++) {
+          const seg = Math.hypot(f.mx[v + 1] - f.mx[v], f.my[v + 1] - f.my[v])
+          const t = total > 0 ? (run + seg / 2) / total : 0.5
+          run += seg
+          const w = Math.round((wa + (wb - wa) * t) * pxPerM * 2) / 2
+          let p = paths.get(w)
+          if (!p) {
+            p = new Path2D()
+            paths.set(w, p)
+          }
+          p.moveTo(f.mx[v] * scale - ox, f.my[v] * scale - oy)
+          p.lineTo(f.mx[v + 1] * scale - ox, f.my[v + 1] * scale - oy)
+        }
+      }
+    })
+    ctx.globalAlpha = 1
+    ctx.setLineDash([])
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    ctx.strokeStyle = FLOOD_EDGE
+    for (const [w, p] of paths) {
+      ctx.lineWidth = w + 2 * FLOOD_EDGE_PX
+      ctx.stroke(p)
+    }
+    ctx.strokeStyle = FLOOD_FILL
+    for (const [w, p] of paths) {
+      ctx.lineWidth = Math.max(0.5, w)
+      ctx.stroke(p)
+    }
+    this.floodMs = Math.round(performance.now() - t0)
   }
 
   private buildGrid(): void {

@@ -70,9 +70,14 @@ export function eachTick(files: readonly TickRows[], ids: readonly (ArrayLike<nu
   return count
 }
 
+/** Meters in a degree of latitude, or of longitude at the equator (Web Mercator's sphere). */
+const M_PER_DEG = 111319.49
+
 /** A section's mark on a reach popup's small map: where it is, the angle across the stream (radians on
- * the screen, clockwise from east), and its two ends when the grid's exact line is known. */
-export interface SectionMark { at: LatLon, angle: number, ends: [LatLon, LatLon] | null, exact: boolean }
+ * the screen, clockwise from east), its two ends when the grid's exact line is known, and the degrees of
+ * latitude and longitude a meter across the stream takes, toward the left bank looking downstream (the
+ * grid's +station side). */
+export interface SectionMark { at: LatLon, angle: number, ends: [LatLon, LatLon] | null, exact: boolean, perM: LatLon }
 
 /** The marks of a reach's n sections along its line, one per section (null where the line places none).
  * They have no ends: the line alone does not tell how wide the grid sampled. */
@@ -87,17 +92,44 @@ export function marksAlong(xs: ArrayLike<number>, ys: ArrayLike<number>, a: numb
     }
     const ux = out[4 * i + 2]
     const uy = out[4 * i + 3]
-    marks.push({ at: [latOf(out[4 * i + 1]), lonOf(out[4 * i])], angle: Math.atan2(ux, -uy), ends: null, exact: false })
+    const lat = latOf(out[4 * i + 1])
+    // left of the flow (ux, uy) on the screen, whose y runs south, is (uy, -ux): north is up
+    const perM: LatLon = [ux / M_PER_DEG, uy / (M_PER_DEG * Math.cos((lat * Math.PI) / 180))]
+    marks.push({ at: [lat, lonOf(out[4 * i])], angle: Math.atan2(ux, -uy), ends: null, exact: false, perM })
   }
   return marks
 }
 
-/** A mark from the grid's exact line: its middle and its two ends (lat, lon), and whether the ends are
- * the sampled width (full) or a stub where the width is unknown. */
-export function markOf(mid: LatLon, a: LatLon, b: LatLon, full: boolean): SectionMark {
+/** A mark from the grid's exact line: its middle, its two ends (lat, lon) at half meters each side,
+ * and whether the ends are the sampled width (full) or a stub where the width is unknown. */
+export function markOf(mid: LatLon, a: LatLon, b: LatLon, full: boolean, half: number): SectionMark {
   // Web Mercator and the screen both run y southward, so this is the angle on the screen
   const angle = Math.atan2(mercY(b[0]) - mercY(a[0]), mercX(b[1]) - mercX(a[1]))
-  return { at: mid, angle, ends: full ? [a, b] : null, exact: true }
+  const perM: LatLon = half > 0 ? [(b[0] - mid[0]) / half, (b[1] - mid[1]) / half] : [0, 0]
+  return { at: mid, angle, ends: full ? [a, b] : null, exact: true, perM }
+}
+
+/** A section's span of w meters across the stream, centered on its point: its right-bank end, then its
+ * left-bank end. */
+export function spanOf(m: SectionMark, w: number): [LatLon, LatLon] {
+  const h = w / 2
+  return [[m.at[0] - m.perM[0] * h, m.at[1] - m.perM[1] * h], [m.at[0] + m.perM[0] * h, m.at[1] + m.perM[1] * h]]
+}
+
+/** A reach's flood-prone area (the owner, 2026-11-20): each section's width across the stream, the ends
+ * joined from section to section, down one bank and back up the other. A section with no width is
+ * joined across. Empty when fewer than two sections have one. */
+export function floodRing(marks: readonly (SectionMark | null)[], widths: readonly (number | null)[]): LatLon[] {
+  const right: LatLon[] = []
+  const left: LatLon[] = []
+  marks.forEach((m, i) => {
+    const w = widths[i]
+    if (!m || w === null || w === undefined || !(w > 0)) return
+    const [r, l] = spanOf(m, w)
+    right.push(r)
+    left.push(l)
+  })
+  return right.length < 2 ? [] : [...right, ...left.reverse()]
 }
 
 /** A reach's line as lat, lon points. */

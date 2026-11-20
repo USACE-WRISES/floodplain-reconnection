@@ -9,6 +9,7 @@ import { huc12Text, latOf, loadUnits, lonOf, mercX, mercY, Q_CAUTION, Q_NODATA, 
 import { BoxSelect } from '../map/boxSelect'
 import { makeMap, outlineRenderer, PANES, START, type AppMap } from '../map/map'
 import { AT_CAP, binColor, binOf, BINS, MATCH, NO_DATA, RAMPS, rampColor, rampGradient, type RampSpec } from '../map/ramp'
+import { FLOOD_ZOOM } from '../map/flood'
 import { TICK_ZOOM, UnitLayer, type LineStyle } from '../map/unitLayer'
 import { Edits } from '../screen/edits'
 import { bhrText, count, flagTexts, ft, mi, QUALITY_LABEL, ratio, slopeText, sqmi } from '../screen/format'
@@ -178,9 +179,11 @@ export class App {
     this.src.onBusy = (ms) => notify(`The data host is busy. Trying again in ${Math.round(ms / 1000)} s.`, { type: 'warning', id: 'busy', seconds: 6 })
     this.m = makeMap(byId('fpr-map'))
     this.map = this.m.map
-    this.units = new UnitLayer(this.map, this.net, PANES.units, PANES.highlight, PANES.ticks)
-    // the Cross-sections layer in the Layers control: the tick canvas, on the map while it is checked
+    this.units = new UnitLayer(this.map, this.net, PANES)
+    // the Cross-sections and Flood-prone area layers in the Layers control: their canvases, on the map
+    // while checked
     this.m.sections.addLayer(this.units.ticks)
+    this.m.flood.addLayer(this.units.flood)
     // a box belongs to the study area it was drawn on: a Clear or an Open since drops it
     this.boxSelect = new BoxSelect(this.map, PANES.marks, (b) => {
       const gen = this.areaGen
@@ -479,6 +482,10 @@ export class App {
         ${sw(NO_DATA, 'No data')}`
     }
     if (area) html += `<div class="fpr-legend-sep"></div>${sw('#7d8ba1', 'Outside the study area')}`
+    // the Flood-prone area layer, while it is on
+    if (this.map.hasLayer(this.m.flood)) {
+      html += `<div class="fpr-legend-sep"></div><div class="fpr-legend-row"><span class="fpr-legend-sw band"></span><span>Flood-prone width, reach median</span></div>`
+    }
     // where no reach is drawn at this zoom, the coverage shading is what the map shows
     if (!this.net.files.length || this.reachBand() < (area ? 1 : 2)) {
       const tint = (fill: string, label: string) => `<div class="fpr-legend-row"><span class="fpr-legend-sw box" style="--sw:${fill};background:${fill}40"></span><span>${esc(label)}</span></div>`
@@ -509,8 +516,12 @@ export class App {
       if (shown !== reaches) this.restyle()
       reaches = shown
     })
-    // the Cross-sections layer turned on or off: its cue
-    this.map.on('overlayadd overlayremove', () => this.updateCue())
+    // a layer turned on or off: its cue, the legend's row and the hover card's line
+    this.map.on('overlayadd overlayremove', () => {
+      this.updateCue()
+      this.renderLegend()
+      this.hoverRef = undefined
+    })
     // The pointer, straight from the map's element (Leaflet hands moves over a canvas on at most every
     // 32 ms): the latest move is handled once a frame, with positions from a cached layout, so a move
     // reads no layout and a hover repaints only the highlight canvas.
@@ -598,6 +609,7 @@ export class App {
       <div>Bank height ratio <b>${esc(bhrText(f, r))}</b></div>
       <div>Entrenchment ratio <b>${ratio(f.er[r] / 100)}</b></div>
       <div>Low-bank height <b>${ft(f.lbh[r] / 100, 1)} ft</b></div>
+      ${this.map.hasLayer(this.m.flood) && f.fpw[r] > 0 ? `<div>Flood-prone width <b>${ft(f.fpw[r] / 10)} ft</b></div>` : ''}
       ${q === Q_CAUTION ? '<div class="f">Use with caution</div>' : ''}`
     return `<div class="t">${esc(f.name[r] || 'Unnamed stream')}</div>
       ${values}
@@ -1811,6 +1823,8 @@ export class App {
       changed: () => {
         this.touch()
         this.recompute()
+        // an edit moves the reach's flood-prone width (edits.ts), and with it the band
+        this.units.floodChanged()
         fill()
       },
     }, f, r, body.querySelector<HTMLElement>('[data-reach-panel="xs"]')!, body.querySelector<HTMLElement>('[data-reach-sections]')!)
@@ -2008,6 +2022,7 @@ export class App {
     this.sort = 'length'
     this.decisions.clear()
     this.edits.clearAll(this.net.files)
+    this.units.floodChanged()
     this.showAll = false
     this.moreOpen = false
     this.sub = 'area'
@@ -2055,6 +2070,7 @@ export class App {
     this.edits.load(s.edits ?? {})
     let gone = 0
     for (const f of this.net.files) gone += this.edits.applyFile(f).length
+    this.units.floodChanged()
     if (gone) notify(`Cross-section edits on ${gone} reach${gone === 1 ? '' : 'es'} were dropped: the data no longer hold ${gone === 1 ? 'that reach' : 'those reaches'} as saved.`, { type: 'warning', seconds: 12 })
     this.renderPane()
     if (this.mode === 'huc') {
@@ -2102,7 +2118,8 @@ export class App {
       else if (this.mode === 'reach' && z < VIEW_ZOOM) text = 'Zoom in until streams show, then click reaches.'
     } else if (!this.result && z < VIEW_ZOOM && this.idx) text = 'Zoom in to see reaches.'
     else if (this.result && z < AREA_ZOOM) text = 'Zoom in to see the study area.'
-    // the Cross-sections layer draws from TICK_ZOOM in: the last cue to show
+    // the two layers draw from their own zooms in: the last cues to show
+    if (!text && z < FLOOD_ZOOM && this.map.hasLayer(this.m.flood)) text = 'Zoom in to see the flood-prone area.'
     if (!text && z < TICK_ZOOM && this.map.hasLayer(this.m.sections)) text = 'Zoom in to see cross-sections.'
     this.cue.innerHTML = text ? `<div class="fpr-cue">${esc(text)}</div>` : ''
   }

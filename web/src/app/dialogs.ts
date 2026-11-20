@@ -57,7 +57,8 @@ export function showHelp(): void {
     cross-section edits to a file that <b>Open</b> reads back.</p>
     <h5>A reach's cross-sections</h5>
     <p>Click a reach to open it, and pick a section with the numbered buttons or on the small map beside the
-    chart, which shows where each section lies. A section the grid stores is drawn at
+    chart, which shows where each section lies and the reach's flood-prone area from each section's width. A
+    section the grid stores is drawn at
     once; <b>Pull from 3DEP</b> draws any other. Drag the bankfull or low-bank line, or type the heights, to set your
     own: the reach is then screened on your edited sections, and the map and the sites follow. <b>Details</b> lists
     every section's ratios and the reach's values.</p>
@@ -71,6 +72,8 @@ export function showHelp(): void {
       one to see why.</li>
       <li>Turn on <b>Cross-sections</b> in the layers menu to see every section a reach is measured on, from zoom 15
       in.</li>
+      <li>Turn on <b>Flood-prone area</b> for a band as wide as each reach's flood-prone width (the median of its
+      sections), from zoom 13 in.</li>
     </ul>
     <p><a href="#" data-open-methods>Methods and limits</a></p>`)
 }
@@ -90,6 +93,11 @@ export function showMethods(idx: FprIndex | null): void {
     out across the valley.</p>
     <p>Bankfull depth and width come from regional curves (Bieger and others, 2015) at each cross-section's
     drainage area, fitted to the section's ground. The values here are raw values, not condition classes.</p>
+    <p><b>The flood-prone area on the map</b> is an estimate. The grid holds each section's flood-prone width, not
+    its two edges, so the area is centered on the stream; where the ground is lower on one side, the real area
+    leans that way. The <b>Flood-prone area</b> layer draws each reach's median width, joined to the next
+    reach's. A reach's popup joins each section's own width, and leaves out a section whose lowest ground lies
+    away from this stream, since its width then belongs to another low spot.</p>
     <h5>Reaches</h5>
     <p>A reach is about 1,000 ft of stream: ${rule?.unit_sections ?? 10} cross-sections, cut along the main stem.
     A reach never crosses a junction where the drainage area more than doubles. Its values are the medians of the

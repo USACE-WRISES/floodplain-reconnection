@@ -8,8 +8,9 @@ import type { ReachSection } from './reach'
 
 export type LatLon = [number, number]
 
-/** A section's middle and its ends (lat, lon) at -wide and +wide. full: the sampled width; else a stub. */
-export interface SectionLine { mid: LatLon, a: LatLon, b: LatLon, full: boolean }
+/** A section's middle and its ends (lat, lon) at -half and +half meters. full: the sampled width (half is
+ * the sampled half-width); else a stub. */
+export interface SectionLine { mid: LatLon, a: LatLon, b: LatLon, full: boolean, half: number }
 
 /** A stub's half-length where the sampled width is unknown, m. */
 const STUB_M = 10
@@ -23,7 +24,7 @@ function latLon(x: number, y: number): LatLon {
 export function lineOf(p: Pick<XsPull, 'x' | 'y' | 'nx' | 'ny'>, wide: number | null): SectionLine {
   const full = wide !== null && wide > 0
   const w = full ? wide : STUB_M
-  return { mid: latLon(p.x, p.y), a: latLon(p.x - p.nx * w, p.y - p.ny * w), b: latLon(p.x + p.nx * w, p.y + p.ny * w), full }
+  return { mid: latLon(p.x, p.y), a: latLon(p.x - p.nx * w, p.y - p.ny * w), b: latLon(p.x + p.nx * w, p.y + p.ny * w), full, half: w }
 }
 
 /** Each section's line, in the reach's order: null where the grid has no place for it, and null for all

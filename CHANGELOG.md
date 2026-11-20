@@ -3,6 +3,8 @@
 ## v0.3.2 (2026-11-20)
 - A Cross-sections layer, off at first, marks every section from zoom 15 in.
 - A reach's popup maps its sections; click one there to show it.
+- A Flood-prone area layer draws each reach's flood-prone width along it.
+- A reach's popup draws its flood-prone area from each section's width.
 - Point at Bank height ratio or Entrenchment ratio for a diagram of each.
 - Methods and limits draws both ratios on a cross-section.
 - Screen: a checkbox turns each criterion on or off and keeps its value.
