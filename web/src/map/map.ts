@@ -5,8 +5,13 @@
 import L from 'leaflet'
 
 const USGS_TOPO_URL = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}'
-const USGS_IMAGERY_URL = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer/tile/{z}/{y}/{x}'
+// The National Map's orthoimagery alone: USGS retired the imagery-with-topo-labels service
+// (USGSImageryTopo answered "not found" on 2026-11-19), and its server now lists only USGSHydroCached,
+// USGSImageryOnly, USGSShadedReliefOnly and USGSTopo. Tiles to zoom 16, as before.
+const USGS_IMAGERY_URL = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}'
 const USGS_ATTR = 'USGS The National Map'
+/** the imagery service's own credit line */
+const USGS_IMAGERY_ATTR = 'USDA, USGS The National Map: Orthoimagery'
 
 /** The view the app opens on: the lower 48. */
 export const START = { lat: 38.5, lon: -95.5, zoom: 5 }
@@ -15,8 +20,8 @@ export const START = { lat: 38.5, lon: -95.5, zoom: 5 }
  * of their own, so a hover never repaints the reaches), the markers on top. */
 export const PANES = { outlines: 'fprOutlines', units: 'fprUnits', highlight: 'fprHighlight', marks: 'fprMarks' }
 
-function usgs(url: string): L.TileLayer {
-  return L.tileLayer(url, { attribution: USGS_ATTR, maxNativeZoom: 16, maxZoom: 19 })
+function usgs(url: string, attribution = USGS_ATTR): L.TileLayer {
+  return L.tileLayer(url, { attribution, maxNativeZoom: 16, maxZoom: 19 })
 }
 
 export interface AppMap {
@@ -36,7 +41,7 @@ export function makeMap(box: HTMLElement): AppMap {
   })
   L.control.zoom({ position: 'topleft', zoomInText: '+', zoomOutText: '-' }).addTo(map)
   L.control.attribution({ position: 'bottomright', prefix: 'Leaflet' }).addTo(map)
-  const imagery = usgs(USGS_IMAGERY_URL)
+  const imagery = usgs(USGS_IMAGERY_URL, USGS_IMAGERY_ATTR)
   const topo = usgs(USGS_TOPO_URL)
   topo.addTo(map)
   Object.assign(map.createPane(PANES.outlines).style, { zIndex: '380' })

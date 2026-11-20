@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.2.1 (2026-11-19)
+- USGS Imagery basemap works again: USGS retired its imagery-with-labels service.
+
 ## v0.2.0 (2026-11-19)
 - A reach's popup shows its cross-sections beside the reach medians.
 - Drag or type a section's bankfull depth and low-bank height.

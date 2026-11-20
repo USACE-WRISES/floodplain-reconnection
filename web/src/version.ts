@@ -2,6 +2,6 @@
 // version (tests/repo_rules.test.ts checks them together).
 export const APP_NAME = 'Floodplain Reconnection Decision Tool'
 export const APP_SHORT = 'Floodplain Reconnection'
-export const APP_VERSION = '0.2.0'
+export const APP_VERSION = '0.2.1'
 export const REPO_URL = 'https://github.com/USACE-WRISES/floodplain-reconnection'
 export const ISSUES_URL = `${REPO_URL}/issues`
