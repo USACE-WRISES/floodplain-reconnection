@@ -8,7 +8,7 @@ import { storedProfile } from '../data/staf'
 import { huc12Text, latOf, loadUnits, lonOf, mercX, mercY, Q_CAUTION, Q_NODATA, Q_UNSAMPLED, reachId, WHY, type UnitFile } from '../data/units'
 import { BoxSelect } from '../map/boxSelect'
 import { makeMap, outlineRenderer, PANES, START, type AppMap } from '../map/map'
-import { AT_CAP, binColor, binOf, BINS, MATCH, NO_DATA, RAMPS, rampColor, rampGradient, UNSAMPLED, type RampSpec } from '../map/ramp'
+import { AT_CAP, binColor, binOf, BINS, MATCH, NO_DATA, RAMPS, rampColor, rampGradient, type RampSpec } from '../map/ramp'
 import { UnitLayer, type LineStyle } from '../map/unitLayer'
 import { Edits } from '../screen/edits'
 import { bhrText, count, flagTexts, ft, mi, QUALITY_LABEL, ratio, slopeText, sqmi } from '../screen/format'
@@ -327,7 +327,6 @@ export class App {
       t.push(s)
     }
     add('out', { color: '#7d8ba1', width: 1.1, alpha: 0.4, z: 1 })
-    add('uns', { color: UNSAMPLED, width: 1.2, z: 2 })
     add('nod', { color: NO_DATA, width: 1.4, z: 3 })
     for (let b = 0; b < BINS; b++) {
       add(`s${b}`, { color: binColor(b), width: 2.6, z: 6 })
@@ -336,9 +335,7 @@ export class App {
     add('cap', { color: AT_CAP, width: 2.6, z: 6 })
     add('capd', { color: AT_CAP, width: 2.4, dash: [5, 4], z: 5 })
     add('m-site', { color: MATCH.site, width: 3.4, z: 9 })
-    add('m-gap', { color: MATCH.site, width: 2.6, dash: [3, 4], z: 8 })
-    add('m-fail', { color: MATCH.fail, width: 1.8, z: 4 })
-    add('m-unm', { color: MATCH.unmeasured, width: 1.4, z: 3 })
+    add('m-other', { color: MATCH.other, width: 1.8, z: 4 })
     this.styleTable = t
     this.styleIds = ids
   }
@@ -361,29 +358,22 @@ export class App {
     const ids = this.net.files.map((f, fi) => {
       const out = new Uint16Array(f.rows)
       const mask = this.masks[fi]
-      const stage = this.result?.stage[fi]
       for (let r = 0; r < f.rows; r++) {
         if (band < (area && mask?.[r] ? 1 : 2)) continue
         if (area && !mask?.[r]) {
           out[r] = id('out')
           continue
         }
+        if (by === 'match') {
+          // two kinds only (the owner, 2026-11-20): in a candidate site, a gap it bridges included (its
+          // card says it is one), or not; a reach that meets the criteria in a run shorter than the
+          // shortest site is not in a site (its card says so too)
+          out[r] = this.siteOf.has(refOf(fi, r)) ? id('m-site') : id('m-other')
+          continue
+        }
         const q = f.q[r]
-        if (q === Q_UNSAMPLED) {
-          out[r] = id('uns')
-          continue
-        }
-        if (by === 'match' && stage) {
-          const st = stage[r]
-          const site = this.siteOf.get(refOf(fi, r))
-          // only the candidate sites are colored: a reach that meets the criteria in a run shorter
-          // than the shortest site is not in a site (its card says so)
-          if (site !== undefined) out[r] = st === STAGE.pass ? id('m-site') : id('m-gap')
-          else if (st === STAGE.unmeasured) out[r] = id('m-unm')
-          else out[r] = id('m-fail')
-          continue
-        }
-        if (q === Q_NODATA) {
+        // too little data or not sampled: one gray (the owner, 2026-11-20)
+        if (q === Q_NODATA || q === Q_UNSAMPLED) {
           out[r] = id('nod')
           continue
         }
@@ -415,7 +405,9 @@ export class App {
     // the switch is made once and then only marked, so a keyboard user's focus stays on it
     let key = this.m.legend.querySelector<HTMLElement>('.fpr-legend-key')
     if (!key) {
-      this.m.legend.innerHTML = `<div class="fpr-legend-switch" role="group" aria-label="Color the map by">${COLORINGS.map((c) =>
+      // "Color by" says what the buttons do (the owner, 2026-11-20)
+      this.m.legend.innerHTML = `<div class="fpr-legend-by" id="fpr-legend-by">Color by</div>
+        <div class="fpr-legend-switch" role="group" aria-labelledby="fpr-legend-by">${COLORINGS.map((c) =>
         `<button type="button" data-by="${c.key}" title="${esc(c.title)}">${esc(c.label)}</button>`).join('')}</div>
         <div class="fpr-legend-key"></div>`
       key = this.m.legend.querySelector<HTMLElement>('.fpr-legend-key')!
@@ -431,11 +423,8 @@ export class App {
     let html: string
     if (by === 'match') {
       html = `<div class="fpr-legend-title">Candidate sites</div>
-        ${sw(MATCH.site, 'In a candidate site')}
-        ${sw(MATCH.site, 'Gap joined into a site', 'dash')}
-        ${sw(MATCH.fail, 'Not in a site')}
-        ${sw(MATCH.unmeasured, 'Not measured')}
-        ${sw(UNSAMPLED, 'Not sampled')}`
+        ${sw(MATCH.site, 'Candidate site')}
+        ${sw(MATCH.other, 'Not a site')}`
     } else {
       const spec: RampSpec = RAMPS[by]
       html = `<div class="fpr-legend-title">${esc(spec.title)}</div>
@@ -444,8 +433,7 @@ export class App {
         ${by === 'bhr' ? sw(AT_CAP, 'At least 2.00 (method cap)') : ''}
         <div class="fpr-legend-sep"></div>
         ${sw(rampColor(0.5), 'Use with caution', 'dash')}
-        ${sw(NO_DATA, 'Not enough data')}
-        ${sw(UNSAMPLED, 'Not sampled')}`
+        ${sw(NO_DATA, 'No data')}`
     }
     if (area) html += `<div class="fpr-legend-sep"></div>${sw('#7d8ba1', 'Outside the study area')}`
     // where no reach is drawn at this zoom, the coverage shading is what the map shows
@@ -566,7 +554,13 @@ export class App {
       ${values}
       <div>Drains <b>${sqmi(f.da[r])} sq mi</b>, ${ft(f.lenM[r])} ft long</div>
       ${f.edited[r] ? `<div class="f">Screened on your edits of ${f.edited[r]} cross-section${f.edited[r] === 1 ? '' : 's'}</div>` : ''}
-      ${site !== undefined ? `<div>Candidate site <b>#${site + 1}</b></div>` : this.inShortRun(ref) ? `<div>${esc(this.shortRunText())}</div>` : ''}`
+      ${site !== undefined ? `<div>Candidate site <b>#${site + 1}</b>${this.isGap(ref) ? ', as a gap' : ''}</div>` : this.inShortRun(ref) ? `<div>${esc(this.shortRunText())}</div>` : ''}`
+  }
+
+  /** A reach in a candidate site that misses a criterion: a gap the site bridges. The map draws it as
+   * part of its site, so its card and popup say what it is. */
+  private isGap(ref: Ref): boolean {
+    return this.siteOf.get(ref) !== undefined && this.result?.stage[fileOf(ref)]?.[rowOf(ref)] !== STAGE.pass
   }
 
   /** A reach that meets every criterion but in a run shorter than the shortest site (not in a site,
@@ -1479,7 +1473,7 @@ export class App {
     const site = this.siteOf.get(ref)
     return `<p class="fpr-note" style="margin-top:0">Reach ${esc(reachId(f, r))} · HUC12 ${esc(huc12Text(f, r) || 'n/a')} · region ${esc(f.vpu[r])}
       · ${ft(f.lenM[r])} ft long, drains ${sqmi(f.da[r])} sq mi</p>
-      ${site !== undefined ? `<p>Part of candidate site <b>#${site + 1}</b>. <a href="#" data-site="${esc(this.ranked[site].id)}">Open the site</a></p>`
+      ${site !== undefined ? `<p>Part of candidate site <b>#${site + 1}</b>${this.isGap(ref) ? ', as a gap' : ''}. <a href="#" data-site="${esc(this.ranked[site].id)}">Open the site</a></p>`
         : this.inShortRun(ref) ? `<p>${esc(this.shortRunText())}, so it is not a candidate site.</p>` : ''}`
   }
 

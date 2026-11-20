@@ -292,6 +292,7 @@ a { color: var(--fpr-accent); }
 .fpr-legend-sw.dash { height: 3px; border-radius: 0; background: repeating-linear-gradient(to right, var(--sw) 0 5px, transparent 5px 8px); }
 .fpr-legend-sw.box { height: 10px; width: 14px; border-radius: 2px; border: 1.5px solid var(--sw); background: transparent; }
 .fpr-legend-sep { border-top: 1px solid var(--rule); margin: 3px 0 1px; }
+.fpr-legend-by { font-size: 10px; line-height: 1; color: var(--fpr-muted); margin-bottom: -1px; }
 .fpr-legend-switch { display: flex; border: 1px solid var(--card-border); border-radius: 5px; overflow: hidden; margin-bottom: 3px; }
 .fpr-legend-switch button { flex: 1; border: 0; background: #fff; color: var(--fpr-muted); font-size: 11px; padding: 3px 4px; cursor: pointer; }
 .fpr-legend-switch button + button { border-left: 1px solid var(--card-border); }
@@ -418,6 +419,7 @@ a { color: var(--fpr-accent); }
   :root { --pane-width: calc(100vw - 24px); }
   .fpr-legend { width: 150px; font-size: 10px; padding: 5px 8px 6px; gap: 3px; }
   .fpr-legend-title { font-size: 10px; }
+  .fpr-legend-by { font-size: 9px; }
   .fpr-legend-switch button { font-size: 10px; padding: 2px 3px; }
   .fpr-legend-key { gap: 3px; }
   .fpr-pane { top: auto; bottom: 12px; max-height: 46vh; }

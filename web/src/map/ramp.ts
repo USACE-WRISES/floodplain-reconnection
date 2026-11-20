@@ -1,18 +1,19 @@
 // The map's colors: continuous ramps for the two ratios (no condition classes: the colors run with
-// the raw value), and the colors of the criteria view.
+// the raw value), and the colors of the Sites view.
 
 /** Blue (connected) to red (incised), the ramp of the project's decks (1.0 to 2.0). */
 export const RAMP = ['#3e7cb1', '#9cc3d5', '#e9c46a', '#d9822b', '#a63d2a']
 /** A median bank height ratio that reads "at least 2.00". */
 export const AT_CAP = '#6e2418'
+/** A reach with no value to color: too little data, or not sampled (one gray: the owner, 2026-11-20). */
 export const NO_DATA = '#a3acb9'
-export const UNSAMPLED = '#c9d0d9'
 
+/** The Sites view draws two kinds of reach (the owner, 2026-11-20): in a candidate site, a gap the site
+ * bridges included, or not. */
 export const MATCH = {
   site: '#c2410c',
   /** a dark neutral: the basemap draws its own streams in light blue */
-  fail: '#5b6678',
-  unmeasured: '#aeb6c2',
+  other: '#5b6678',
 } as const
 
 export interface RampSpec {

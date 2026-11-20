@@ -60,9 +60,9 @@ export function showHelp(): void {
     <ul>
       <li>Zoom in past the coverage outlines to see reaches anywhere the grid is built.</li>
       <li>Point at a reach for its values. Click it for its cross-sections and details.</li>
-      <li>The legend's buttons color the reaches by bank height ratio (BHR), entrenchment ratio (ER), or the
-      candidate sites (Sites).</li>
-      <li>Dashed reaches carry a caution. Gray reaches have too little data or are not sampled.</li>
+      <li>The legend's <b>Color by</b> buttons color the reaches by bank height ratio (BHR), entrenchment ratio
+      (ER), or the candidate sites (Sites).</li>
+      <li>Dashed reaches carry a caution. Gray reaches have no data (BHR, ER) or are not in a site (Sites).</li>
     </ul>
     <p><a href="#" data-open-methods>Methods and limits</a></p>`)
 }
@@ -101,7 +101,7 @@ export function showMethods(idx: FprIndex | null): void {
     data"), and a flood-prone width that runs off the profile or a 3 m or 10 m elevation model ("use with caution").</p>
     <h5>Sites</h5>
     <p>Reaches that meet every criterion and touch along a main stem make a candidate site. Short gaps can be
-    bridged. A run shorter than the shortest site is not a site, and the map leaves it uncolored. Site values
+    bridged. A run shorter than the shortest site is not a site, and the map draws it gray. Site values
     are the medians of their reaches' values.</p>
     <h5>Coverage</h5>
     <ul>
