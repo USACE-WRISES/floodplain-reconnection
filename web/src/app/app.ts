@@ -25,6 +25,7 @@ import { byId, esc } from './html'
 import { closeModal, showModal } from './modal'
 import { notify } from './notify'
 import { wireSearch } from './search'
+import { ratioCard, termButton, type Term } from './ratios'
 import { profileSvg } from './xscard'
 import { ReachExplorer } from './xsexplorer'
 
@@ -166,6 +167,8 @@ export class App {
   private picksFrame = 0
   /** hides the settings' info box (set by wireTips; a redraw of the pane takes its icon away) */
   private hideTip: () => void = () => {}
+  /** the legend key as last drawn */
+  private legendHtml = ''
   private inputTimer = 0
 
   constructor(params: URLSearchParams, dataBase: string, stafBase: string) {
@@ -464,7 +467,8 @@ export class App {
         ${sw(MATCH.other, 'Screened out')}`
     } else {
       const spec: RampSpec = RAMPS[by]
-      html = `<div class="fpr-legend-title">${esc(spec.title)}</div>
+      // the ratio's name shows its card (ratios.ts)
+      html = `<div class="fpr-legend-title">${termButton(by)}, reach median</div>
         <div class="fpr-legend-ramp" style="background:${rampGradient(spec)}"></div>
         <div class="fpr-legend-ends"><span>${esc(spec.loLabel)}</span><span>${esc(spec.hiLabel)}</span></div>
         ${by === 'bhr' ? sw(AT_CAP, 'At least 2.00 (method cap)') : ''}
@@ -479,7 +483,11 @@ export class App {
       html += `<div class="fpr-legend-sep"></div>${tint('#2f4b7c', 'Reaches built')}${tint('#e9c46a', 'Partly built')}
         <div class="fpr-legend-row" style="color:#646f80">Zoom in to see reaches.</div>`
     }
-    key.innerHTML = html
+    // redrawn only when it changes: a ratio's name being pointed at keeps its card
+    if (html !== this.legendHtml) {
+      key.innerHTML = html
+      this.legendHtml = html
+    }
   }
 
   // ---------------------------------------------------------------- the map's events
@@ -1136,9 +1144,10 @@ export class App {
     this.refreshPane()
   }
 
-  /** The settings' info icons (the owner, 2026-11-20): one box, by the icon, shown on hover or focus and
-   * on a click or tap (phones), hidden on leave, blur, Escape, a click elsewhere or a scroll. It lives on
-   * the page, not in the pane, so the pane's scrolling never clips it. */
+  /** The settings' info icons and the two ratios' names (the owner, 2026-11-20): one box, by the icon
+   * or name, shown on hover or focus and on a click or tap (phones), hidden on leave, blur, Escape, a
+   * click elsewhere or a scroll. It lives on the page, above a popup, so it shows alike from the pane,
+   * the legend and a reach's popup, and nothing clips it. A name shows its ratio's card (ratios.ts). */
   private wireTips(): void {
     const tipbox = document.createElement('div')
     tipbox.className = 'fpr-tipbox'
@@ -1158,7 +1167,10 @@ export class App {
       hide()
       at = b
       b.setAttribute('aria-describedby', 'fpr-tipbox')
-      tipbox.textContent = TIPS[b.dataset.tip as keyof typeof TIPS] ?? ''
+      const term = b.dataset.term as Term | undefined
+      tipbox.classList.toggle('card', term !== undefined)
+      if (term !== undefined) tipbox.innerHTML = ratioCard(term)
+      else tipbox.textContent = TIPS[b.dataset.tip as keyof typeof TIPS] ?? ''
       tipbox.hidden = false
       // under the icon, or over it where the window ends; never past either side
       const r = b.getBoundingClientRect()
@@ -1168,20 +1180,20 @@ export class App {
       tipbox.style.left = `${Math.round(left)}px`
       tipbox.style.top = `${Math.round(top)}px`
     }
-    const tipOf = (e: Event) => (e.target instanceof Element ? e.target.closest<HTMLElement>('.fpr-info') : null)
-    this.pane.addEventListener('mouseover', (e) => {
+    const tipOf = (e: Event) => (e.target instanceof Element ? e.target.closest<HTMLElement>('.fpr-info, .fpr-term') : null)
+    document.addEventListener('mouseover', (e) => {
       const b = tipOf(e)
       if (b) show(b)
     })
-    this.pane.addEventListener('mouseout', (e) => {
+    document.addEventListener('mouseout', (e) => {
       const b = tipOf(e)
       if (b && !(e.relatedTarget instanceof Node && b.contains(e.relatedTarget)) && document.activeElement !== b) hide()
     })
-    this.pane.addEventListener('focusin', (e) => {
+    document.addEventListener('focusin', (e) => {
       const b = tipOf(e)
       if (b) show(b)
     })
-    this.pane.addEventListener('focusout', (e) => {
+    document.addEventListener('focusout', (e) => {
       if (tipOf(e)) hide()
     })
     // a tap on a phone sends no hover: the click shows the box, and a click anywhere else hides it
@@ -1192,10 +1204,13 @@ export class App {
         show(b)
       } else hide()
     }, true)
+    // Escape closes the box first, and only then the popup under it
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') hide()
-    })
-    this.pane.addEventListener('scroll', hide, true)
+      if (e.key !== 'Escape' || !at) return
+      hide()
+      e.stopPropagation()
+    }, true)
+    document.addEventListener('scroll', hide, true)
     this.hideTip = hide
   }
 
@@ -1395,13 +1410,16 @@ export class App {
         <span class="fpr-unit">${unit}</span><b class="fpr-left" id="fpr-left-${left}"></b></div>
         ${left === 'bhr' || left === 'er' ? `<div class="fpr-hist-box" id="fpr-hist-${left}"></div>` : ''}</div>`
     }
+    // the two ratios' names show their diagram when pointed at (ratios.ts); a button cannot sit in a
+    // label, so the box takes its full name from aria-label
+    const ratioWords = (t: 'bhr' | 'er', key: RowKey) => `<span class="fpr-crit-label">${termButton(t)}<label for="crit-${key}">at least</label></span>`
     const line = (inner: string) => `<div class="fpr-crit"><div class="fpr-crit-line">${inner}</div></div>`
     return `
       <div class="fpr-result" id="fpr-result" aria-live="polite"></div>
       <div class="fpr-group">Keep reaches with <small>reaches left</small></div>
       ${row('daMinSqmi', 'the drainage area', '<label for="crit-daMinSqmi">Drainage area at least</label>', '0.5', '0', 'sq mi')}
-      ${row('bhrMin', 'the bank height ratio', '<label for="crit-bhrMin">Bank height ratio at least</label>', '0.05', '0', '')}
-      ${row('erMin', 'the entrenchment ratio', '<label for="crit-erMin">Entrenchment ratio at least</label>', '0.1', '1', '')}
+      ${row('bhrMin', 'the bank height ratio', ratioWords('bhr', 'bhrMin'), '0.05', '0', '', 'Bank height ratio at least')}
+      ${row('erMin', 'the entrenchment ratio', ratioWords('er', 'erMin'), '0.1', '1', '', 'Entrenchment ratio at least')}
       ${row('minSiteFt', 'the shortest site', named('minSiteFt', 'Sites of at least'), '100', '100', 'ft')}
       <details class="fpr-more" id="fpr-more"${this.moreOpen ? ' open' : ''}>
         <summary>More settings <span class="fpr-more-n" id="fpr-more-n"></span></summary>
@@ -1798,8 +1816,8 @@ export class App {
     const q = f.q[r]
     const site = this.siteOf.get(ref)
     const vals = q >= Q_NODATA ? `<span>${esc(QUALITY_LABEL[q])}</span>`
-      : `<span><abbr title="Bank height ratio">BHR</abbr> <b>${esc(bhrText(f, r))}</b></span>
-        <span><abbr title="Entrenchment ratio">ER</abbr> <b>${ratio(f.er[r] / 100)}</b></span>
+      : `<span>${termButton('bhr', 'BHR')} <b>${esc(bhrText(f, r))}</b></span>
+        <span>${termButton('er', 'ER')} <b>${ratio(f.er[r] / 100)}</b></span>
         ${q === Q_CAUTION ? '<span class="f">Use with caution</span>' : ''}`
     return `<div class="fpr-reach-vals">${vals}<span>Drains <b>${sqmi(f.da[r])} sq mi</b></span><span><b>${ft(f.lenM[r])} ft</b> long</span></div>
       ${site !== undefined ? `<p>In candidate site <b>#${site + 1}</b>${this.isGap(ref) ? ', as a gap' : ''}. <a href="#" data-site="${esc(this.ranked[site].id)}">Open the site</a></p>`

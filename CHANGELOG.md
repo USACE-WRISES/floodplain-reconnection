@@ -1,6 +1,8 @@
 # Changelog
 
 ## v0.3.2 (2026-11-20)
+- Point at Bank height ratio or Entrenchment ratio for a diagram of each.
+- Methods and limits draws both ratios on a cross-section.
 - Screen: a checkbox turns each criterion on or off and keeps its value.
 - Site length starts off: over half of all reaches are a little under 1,000 ft.
 

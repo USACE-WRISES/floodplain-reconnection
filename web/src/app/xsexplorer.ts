@@ -19,6 +19,7 @@ import { pullable, ratioMedian, reachSections, scored, type ReachSection } from 
 import { defaultHeights, measure, profileFrom, type Measured, type Profile } from '../xs/section'
 import { medianCandidate } from '../xs/xsreach'
 import { esc } from './html'
+import { termButton } from './ratios'
 import { type Heights, XsChart } from './xschart'
 
 const SQFT_PER_SQM = FT_PER_M * FT_PER_M
@@ -340,8 +341,8 @@ export class ReachExplorer {
     const sqft = (m2: number | null | undefined) => (m2 === null || m2 === undefined ? 'n/a' : `${(m2 * SQFT_PER_SQM).toFixed(1)} sq ft`)
     const num = (k: string, v: string) => `<span>${k}</span><b>${v}</b>`
     this.q<HTMLElement>('[data-xsx-nums]').innerHTML = m ? [
-      num('<abbr title="Bank height ratio">BHR</abbr>', `${m.capped ? 'at least ' : ''}${r2(m.bhr)}`),
-      num('<abbr title="Entrenchment ratio">ER</abbr>', `${m.edge ? 'at least ' : ''}${r2(m.er)}`),
+      num(termButton('bhr', 'BHR'), `${m.capped ? 'at least ' : ''}${r2(m.bhr)}`),
+      num(termButton('er', 'ER'), `${m.edge ? 'at least ' : ''}${r2(m.er)}`),
       num('Bankfull', `${ftOf(m.bfd, 100)} deep, ${ftOf(m.bfw, 10)} wide`),
       num('Flood-prone', `${ftOf(m.fpw, 10)} wide`),
     ].join('') : '<span>Not measured</span>'

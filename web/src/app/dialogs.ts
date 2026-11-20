@@ -4,6 +4,7 @@ import type { FprIndex } from '../data/index'
 import { APP_NAME, APP_VERSION, ISSUES_URL, REPO_URL } from '../version'
 import { esc } from './html'
 import { showModal } from './modal'
+import { CONNECTIVITY, ratiosFigure } from './ratios'
 
 export function showAbout(idx: FprIndex | null, dataVersion: string): void {
   const built = idx ? Object.keys(idx.huc8).length : 0
@@ -43,8 +44,9 @@ export function showHelp(): void {
     the passing reaches into sites, and the card on top counts the candidate sites your study reaches make. The
     shortest site starts unchecked, so every run of passing reaches is a site: reaches run about 1,000 ft, and over
     half are a little shorter. <b>More settings</b> holds the gaps a site can span, the largest drainage area, the
-    quality filters, and <b>Reset to starting values</b>. Point at an <b>i</b> for what a setting does. The
-    starting values are placeholders for the project team to set.</p>
+    quality filters, and <b>Reset to starting values</b>. Point at an <b>i</b>, or at a dotted name such as
+    <b>Bank height ratio</b>, for what it means. The starting values are placeholders for the project team to
+    set.</p>
     <h5>3. Shortlist</h5>
     <p>A candidate site is a run of reaches that meet the criteria along a stream's main stem. A tributary starts a
     site of its own. Rank the sites, keep or drop each one, add notes, and open a site for its reach by reach values
@@ -74,6 +76,8 @@ export function showMethods(idx: FprIndex | null): void {
   const rule = idx?.rule
   showModal('Methods and limits', `
     <h5>What the two ratios measure</h5>
+    <p>${esc(CONNECTIVITY)}</p>
+    ${ratiosFigure()}
     <p><b>Bank height ratio (BHR)</b> is the low-bank height divided by the bankfull depth. Near 1.0 the channel
     spills onto its floodplain at bankfull flow. Higher values mean the channel is cut down below its floodplain.
     The method stops at 2.00: where no bank is found below twice the bankfull depth, the ratio reads
