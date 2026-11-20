@@ -200,7 +200,11 @@ export interface SavedScreening {
   app_version: string
   data_version: string
   saved_at: string
-  area: { mode: 'huc' | 'walk' | 'box', codes: string[], walk: { huc8: string, id: string } | null, box: [number, number, number, number] | null }
+  /** 'reach': the reaches picked, by id and file; 'box' (version 0.2) opens as the reaches it holds */
+  area: {
+    mode: 'huc' | 'walk' | 'reach' | 'box', codes: string[], walk: { huc8: string, id: string } | null,
+    box: [number, number, number, number] | null, reaches?: { huc8: string, id: string }[]
+  }
   criteria: Criteria
   color_by: string
   sort: string
@@ -214,6 +218,11 @@ export function readSaved(text: string): SavedScreening {
   const v = JSON.parse(text)
   if (v?.format !== 'fpr-screening' || (v?.version !== 1 && v?.version !== 2)) throw new Error('This is not a screening saved by this tool.')
   if (!v.area || !v.criteria) throw new Error('The file is missing its study area or criteria.')
+  const reaches = v.area.reaches
+  if (!['huc', 'walk', 'reach', 'box'].includes(v.area.mode)
+    || (reaches !== undefined && !(Array.isArray(reaches) && reaches.every((x: any) => typeof x?.huc8 === 'string' && typeof x?.id === 'string')))) {
+    throw new Error('The file\'s study area is not readable.')
+  }
   if (v.edits !== undefined && (typeof v.edits !== 'object' || v.edits === null || Array.isArray(v.edits))) throw new Error('The file\'s cross-section edits are not readable.')
   return v as SavedScreening
 }

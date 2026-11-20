@@ -6,13 +6,15 @@ import { dataVersion, fprIndex, huc8sInBox, type FprIndex } from '../data/index'
 import { DataSource } from '../data/source'
 import { storedProfile } from '../data/staf'
 import { huc12Text, latOf, loadUnits, lonOf, mercX, mercY, Q_CAUTION, Q_NODATA, Q_UNSAMPLED, reachId, WHY, type UnitFile } from '../data/units'
+import { BoxSelect } from '../map/boxSelect'
 import { makeMap, outlineRenderer, PANES, START, type AppMap } from '../map/map'
 import { AT_CAP, binColor, binOf, BINS, MATCH, NO_DATA, RAMPS, rampColor, rampGradient, UNSAMPLED, type RampSpec } from '../map/ramp'
 import { UnitLayer, type LineStyle } from '../map/unitLayer'
 import { Edits } from '../screen/edits'
 import { bhrText, count, flagTexts, ft, mi, QUALITY_LABEL, ratio, slopeText, sqmi } from '../screen/format'
-import { boxMask, hucFiles, hucMask, Network, refMask, refOf, rowOf, type Ref } from '../screen/model'
-import { defaultCriteria, presetOf, PRESETS, rankSites, screen, SORTS, STAGE, type Criteria, type ScreenResult, type Site, type SortKey } from '../screen/screen'
+import { fileOf, hucFiles, hucMask, Network, refMask, refOf, rowOf, type Ref } from '../screen/model'
+import { addBox, pickedFiles, picksFromBox, resolvePicks, savedPicks, togglePick, type Picks } from '../screen/picks'
+import { defaultCriteria, presetOf, rankSites, screen, SORTS, STAGE, type Criteria, type ScreenResult, type Site, type SortKey } from '../screen/screen'
 import { APP_VERSION } from '../version'
 import { plannedPane, showAbout, showHelp, showMethods } from './dialogs'
 import { registerDownload } from './download'
@@ -25,8 +27,16 @@ import { profileSvg } from './xscard'
 import { ReachExplorer } from './xsexplorer'
 
 type Sub = 'area' | 'screen' | 'shortlist' | 'report'
-type Mode = 'huc' | 'walk' | 'box'
+/** The study area: picked watersheds, everything upstream of a reach, or the reaches picked one by one
+ * or a box at a time (the owner, 2026-11-19: Reaches took the place of a single drawn box). */
+type Mode = 'huc' | 'walk' | 'reach'
 type ColorBy = 'bhr' | 'er' | 'match'
+
+const MODES: { key: Mode, label: string, hint: string }[] = [
+  { key: 'huc', label: 'Watersheds', hint: 'Click watersheds on the map to add or remove them.' },
+  { key: 'walk', label: 'Upstream', hint: 'Click a stream to screen everything upstream of it.' },
+  { key: 'reach', label: 'Reaches', hint: 'Click reaches to add or remove them. Hold Shift and drag to add a box of them.' },
+]
 
 const SUBS: { key: Sub, label: string }[] = [
   { key: 'area', label: 'Study area' },
@@ -35,21 +45,26 @@ const SUBS: { key: Sub, label: string }[] = [
   { key: 'report', label: 'Report' },
 ]
 
+/** The legend's switch: what the map's colors show. */
+const COLORINGS: { key: ColorBy, label: string, title: string }[] = [
+  { key: 'bhr', label: 'BHR', title: 'Bank height ratio' },
+  { key: 'er', label: 'ER', title: 'Entrenchment ratio' },
+  { key: 'match', label: 'Sites', title: 'Candidate sites and the criteria' },
+]
+
+/** The criteria under More settings (the Screen step's other three show at all times). */
+const MORE_KEYS = ['minSiteFt', 'gapReaches', 'daMaxSqmi', 'includeCaution', 'countCapped', 'skipCanals'] as const
+
 /** Reaches show for the view from this zoom (the files the view meets load by themselves). */
 const VIEW_ZOOM = 11
+/** A study area's reaches show from this zoom, wider, so the whole area can be seen (reaches are
+ * pointed at from here too: unitLayer.ts MIN_HIT_ZOOM). */
+const AREA_ZOOM = 8
 /** The most HUC8 files a view loads by itself, and a study area may hold. */
 const VIEW_FILES = 4
 const AREA_FILES = 12
 /** HUC12 outlines show from this zoom. */
 const PICK_ZOOM = 9
-
-interface Example { id: string, label: string, kind: 'huc' | 'walk', prefixes?: string[], walkId?: number, huc8?: string, view: [number, number, number] }
-
-const EXAMPLES: Example[] = [
-  { id: 'utoy', label: 'Utoy Creek, GA', kind: 'huc', prefixes: ['031300020103'], view: [33.73, -84.49, 12] },
-  { id: 'coosa', label: 'Coosawhatchie River, SC', kind: 'huc', prefixes: ['0305020801', '0305020802', '0305020803', '0305020804'], view: [32.85, -81.15, 10] },
-  { id: 'norway', label: 'Norway Creek, IA', kind: 'walk', walkId: 23000300012339, huc8: '10230001', view: [41.93, -95.85, 12] },
-]
 
 export class App {
   readonly src: DataSource
@@ -74,9 +89,8 @@ export class App {
   codes = new Set<string>()
   lastPick: string | null = null
   walkFrom: { huc8: string, id: string } | null = null
-  box: [number, number, number, number] | null = null
-  private corner: L.LatLng | null = null
-  private boxLayer: L.Rectangle | null = null
+  /** picked reaches (the Reaches study area) */
+  picks: Picks = new Map()
   private pin: L.CircleMarker | null = null
   masks: Uint8Array[] = []
   criteria: Criteria = defaultCriteria()
@@ -87,6 +101,8 @@ export class App {
   decisions = new Map<string, Decision>()
   selected: string | null = null
   showAll = false
+  /** the Screen step's More settings shown (kept across redraws) */
+  moreOpen = false
   dirty = false
   private siteOf = new Map<Ref, number>()
   private loading = new Map<string, Promise<void>>()
@@ -98,7 +114,6 @@ export class App {
   private hucHover: string | null = null
   private hucHoverLayer: L.Path | null = null
   private coverageLayer: L.GeoJSON | null = null
-  private coverageTips = new Map<L.Layer, string>()
   /** One canvas for every outline (a canvas takes the pointer for the shapes it draws only) */
   private readonly outlines = outlineRenderer()
   private styleTable: LineStyle[] = []
@@ -107,7 +122,13 @@ export class App {
   /** The reach the card shows (undefined: rebuild it at the next move, as after a new screen). */
   private hoverRef: Ref | null | undefined = null
   private hoverSize: [number, number] = [0, 0]
-  private crosshair = false
+  /** Shift and drag on the map adds a box of reaches (on in the Reaches study area only) */
+  private readonly boxSelect: BoxSelect
+  /** boxes are added one after another (each waits for its files), so two quick ones never pass the
+   * file limit together */
+  private boxJob: Promise<void> = Promise.resolve()
+  /** counts every clearing of the study area: a box whose files were still loading then is dropped */
+  private areaGen = 0
   /** Where the map sits (viewport px) and its offset in the page's shell, measured on resize. */
   private layout = { mapLeft: 0, mapTop: 0, dx: 0, dy: 0, w: 0, h: 0 }
   private recomputeFrame = 0
@@ -121,6 +142,14 @@ export class App {
     this.m = makeMap(byId('fpr-map'))
     this.map = this.m.map
     this.units = new UnitLayer(this.map, this.net, PANES.units, PANES.highlight)
+    // a box belongs to the study area it was drawn on: a Clear or an Open since drops it
+    this.boxSelect = new BoxSelect(this.map, PANES.marks, (b) => {
+      const gen = this.areaGen
+      this.boxJob = this.boxJob.then(() => this.pickBox(b, gen))
+    }, () => {
+      if (this.boxSelect.drawing) this.hideHover()
+      this.updateCue()
+    })
     this.buildStyles()
   }
 
@@ -129,6 +158,7 @@ export class App {
   async start(): Promise<void> {
     this.wireHeader()
     this.wireMap()
+    this.wireLegend()
     this.wirePane()
     this.registerDownloads()
     this.renderPane()
@@ -156,12 +186,10 @@ export class App {
         renderer: this.outlines,
         pane: PANES.outlines,
         style: (feat) => this.coverageStyle(String(feat?.properties?.huc8 ?? '')),
-        onEachFeature: (feat, layer) => {
-          const code = String(feat.properties?.huc8 ?? '')
-          const info = this.idx?.huc8[code]
-          const status = info ? (info.status === 'built' ? 'reaches built' : 'reaches partly built') : 'not built yet'
-          this.coverageTips.set(layer, `${esc(feat.properties?.name ?? '')} (HUC8 ${esc(code)}): ${status}`)
-          if (this.map.getZoom() < PICK_ZOOM) layer.bindTooltip(this.coverageTips.get(layer)!, { sticky: true, className: 'fpr-tip fpr-tip-area' })
+        // no name on hover (the owner, 2026-11-19: a watershed's name, mostly a river's, read as a
+        // river's card while no river was drawn yet); the legend and the cue say where reaches are built
+        // and to zoom in, and a click on a watershed zooms to it
+        onEachFeature: (_feat, layer) => {
           layer.on('click', () => {
             if (this.map.getZoom() < PICK_ZOOM) this.map.fitBounds((layer as L.Polygon).getBounds(), { maxZoom: 11 })
           })
@@ -184,7 +212,7 @@ export class App {
   private coverageStyle(code: string): L.PathOptions {
     const info = this.idx?.huc8[code]
     const band = this.coverageBand()
-    // fill stays on (at no opacity where nothing shows) so a watershed's name still shows on hover
+    // fill stays on (at no opacity where nothing shows) so a click inside a watershed still zooms to it
     if (!info) {
       return band === 0 ? { stroke: false, fill: true, fillOpacity: 0 }
         : { color: '#8a94a6', weight: band === 1 ? 0.5 : 0.4, opacity: 0.5, dashArray: '3 3', fill: true, fillOpacity: 0 }
@@ -255,7 +283,7 @@ export class App {
   }
 
   hasArea(): boolean {
-    return (this.mode === 'huc' && this.codes.size > 0) || (this.mode === 'walk' && this.walkFrom !== null) || (this.mode === 'box' && this.box !== null)
+    return (this.mode === 'huc' && this.codes.size > 0) || (this.mode === 'walk' && this.walkFrom !== null) || (this.mode === 'reach' && this.picks.size > 0)
   }
 
   /** Study-area masks, the screen, the sites, then the map and the pane. */
@@ -274,10 +302,7 @@ export class App {
   private computeMasks(): Uint8Array[] {
     if (!this.hasArea()) return this.net.files.map((f) => new Uint8Array(f.rows))
     if (this.mode === 'huc') return hucMask(this.net, [...this.codes])
-    if (this.mode === 'box' && this.box) {
-      const [w, s, e, n] = this.box
-      return boxMask(this.net, mercX(w), mercY(n), mercX(e), mercY(s))
-    }
+    if (this.mode === 'reach') return refMask(this.net, this.picks.values())
     if (this.mode === 'walk' && this.walkFrom) {
       const start = this.findReach(this.walkFrom.id)
       if (start === null) return this.net.files.map((f) => new Uint8Array(f.rows))
@@ -312,11 +337,17 @@ export class App {
     add('capd', { color: AT_CAP, width: 2.4, dash: [5, 4], z: 5 })
     add('m-site', { color: MATCH.site, width: 3.4, z: 9 })
     add('m-gap', { color: MATCH.site, width: 2.6, dash: [3, 4], z: 8 })
-    add('m-short', { color: MATCH.short, width: 2.6, z: 7 })
     add('m-fail', { color: MATCH.fail, width: 1.8, z: 4 })
     add('m-unm', { color: MATCH.unmeasured, width: 1.4, z: 3 })
     this.styleTable = t
     this.styleIds = ids
+  }
+
+  /** Which reaches the map draws at its zoom: 2 all (from VIEW_ZOOM, where they load), 1 the study
+   * area's only (from AREA_ZOOM), 0 none. */
+  private reachBand(): number {
+    const z = this.map.getZoom()
+    return z >= VIEW_ZOOM ? 2 : z >= AREA_ZOOM ? 1 : 0
   }
 
   private restyle(): void {
@@ -324,11 +355,15 @@ export class App {
     const area = this.result !== null
     const by: ColorBy = this.colorBy === 'match' && !area ? 'bhr' : this.colorBy
     const spec = RAMPS[by === 'er' ? 'er' : 'bhr']
+    // a reach shows only where it can be seen (the owner, 2026-11-19: lines kept on a map zoomed back
+    // out read as a blot); one with no style is neither drawn nor pointed at
+    const band = this.reachBand()
     const ids = this.net.files.map((f, fi) => {
       const out = new Uint16Array(f.rows)
       const mask = this.masks[fi]
       const stage = this.result?.stage[fi]
       for (let r = 0; r < f.rows; r++) {
+        if (band < (area && mask?.[r] ? 1 : 2)) continue
         if (area && !mask?.[r]) {
           out[r] = id('out')
           continue
@@ -341,8 +376,9 @@ export class App {
         if (by === 'match' && stage) {
           const st = stage[r]
           const site = this.siteOf.get(refOf(fi, r))
+          // only the candidate sites are colored: a reach that meets the criteria in a run shorter
+          // than the shortest site is not in a site (its card says so)
           if (site !== undefined) out[r] = st === STAGE.pass ? id('m-site') : id('m-gap')
-          else if (st === STAGE.pass) out[r] = id('m-short')
           else if (st === STAGE.unmeasured) out[r] = id('m-unm')
           else out[r] = id('m-fail')
           continue
@@ -376,14 +412,28 @@ export class App {
   private renderLegend(): void {
     const area = this.result !== null
     const by: ColorBy = this.colorBy === 'match' && !area ? 'bhr' : this.colorBy
+    // the switch is made once and then only marked, so a keyboard user's focus stays on it
+    let key = this.m.legend.querySelector<HTMLElement>('.fpr-legend-key')
+    if (!key) {
+      this.m.legend.innerHTML = `<div class="fpr-legend-switch" role="group" aria-label="Color the map by">${COLORINGS.map((c) =>
+        `<button type="button" data-by="${c.key}" title="${esc(c.title)}">${esc(c.label)}</button>`).join('')}</div>
+        <div class="fpr-legend-key"></div>`
+      key = this.m.legend.querySelector<HTMLElement>('.fpr-legend-key')!
+    }
+    this.m.legend.querySelectorAll<HTMLButtonElement>('.fpr-legend-switch button').forEach((b) => {
+      const on = b.dataset.by === by
+      b.classList.toggle('on', on)
+      b.setAttribute('aria-pressed', String(on))
+      b.disabled = b.dataset.by === 'match' && !area
+      b.title = b.disabled ? 'Candidate sites: choose a study area first' : COLORINGS.find((c) => c.key === b.dataset.by)!.title
+    })
     const sw = (color: string, label: string, kind = '') => `<div class="fpr-legend-row"><span class="fpr-legend-sw ${kind}" style="--sw:${color}"></span><span>${esc(label)}</span></div>`
     let html: string
     if (by === 'match') {
-      html = `<div class="fpr-legend-title">Criteria</div>
+      html = `<div class="fpr-legend-title">Candidate sites</div>
         ${sw(MATCH.site, 'In a candidate site')}
         ${sw(MATCH.site, 'Gap joined into a site', 'dash')}
-        ${sw(MATCH.short, 'Meets the criteria, site too short')}
-        ${sw(MATCH.fail, 'Fails a criterion')}
+        ${sw(MATCH.fail, 'Not in a site')}
         ${sw(MATCH.unmeasured, 'Not measured')}
         ${sw(UNSAMPLED, 'Not sampled')}`
     } else {
@@ -398,34 +448,31 @@ export class App {
         ${sw(UNSAMPLED, 'Not sampled')}`
     }
     if (area) html += `<div class="fpr-legend-sep"></div>${sw('#7d8ba1', 'Outside the study area')}`
-    if (!this.net.files.length) {
+    // where no reach is drawn at this zoom, the coverage shading is what the map shows
+    if (!this.net.files.length || this.reachBand() < (area ? 1 : 2)) {
       const tint = (fill: string, label: string) => `<div class="fpr-legend-row"><span class="fpr-legend-sw box" style="--sw:${fill};background:${fill}40"></span><span>${esc(label)}</span></div>`
       html += `<div class="fpr-legend-sep"></div>${tint('#2f4b7c', 'Reaches built')}${tint('#e9c46a', 'Partly built')}
         <div class="fpr-legend-row" style="color:#646f80">Zoom in to see reaches.</div>`
     }
-    this.m.legend.innerHTML = html
+    key.innerHTML = html
   }
 
   // ---------------------------------------------------------------- the map's events
 
   private wireMap(): void {
     let band = this.coverageBand()
+    let reaches = this.reachBand()
     this.map.on('moveend', () => {
       this.autoLoad()
       this.updatePicks()
       this.updateCue()
       const now = this.coverageBand()
-      if (this.coverageLayer && now !== band) {
-        this.coverageLayer.setStyle((feat) => this.coverageStyle(String(feat?.properties?.huc8 ?? '')))
-        // the watershed names show until reaches do (zoomed in, the reaches carry the pointer)
-        if ((now === 2) !== (band === 2)) {
-          this.coverageLayer.eachLayer((l) => {
-            if (now < 2) l.bindTooltip(this.coverageTips.get(l) ?? '', { sticky: true, className: 'fpr-tip fpr-tip-area' })
-            else l.unbindTooltip()
-          })
-        }
-      }
+      if (this.coverageLayer && now !== band) this.coverageLayer.setStyle((feat) => this.coverageStyle(String(feat?.properties?.huc8 ?? '')))
       band = now
+      // past a zoom where reaches show or hide, the map draws them again
+      const shown = this.reachBand()
+      if (shown !== reaches) this.restyle()
+      reaches = shown
     })
     // The pointer, straight from the map's element (Leaflet hands moves over a canvas on at most every
     // 32 ms): the latest move is handled once a frame, with positions from a cached layout, so a move
@@ -467,19 +514,15 @@ export class App {
   private onPointer(x: number, y: number): void {
     const map = this.map as L.Map & { _animatingZoom?: boolean }
     // (Leaflet's drag handler has moving(); its typings leave it out)
-    if ((map.dragging as L.Handler & { moving(): boolean }).moving() || map._animatingZoom) {
+    // (a box being drawn shows no card either)
+    if ((map.dragging as L.Handler & { moving(): boolean }).moving() || map._animatingZoom || this.boxSelect.drawing) {
       this.hideHover()
       return
     }
     const latlng = map.containerPointToLatLng([x, y])
     this.readout.textContent = `${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)} · zoom ${map.getZoom()}`
     const container = map.getContainer()
-    const picking = this.step === 1 && this.sub === 'area' && this.mode === 'box'
-    if (picking !== this.crosshair) {
-      this.crosshair = picking
-      container.classList.toggle('fpr-crosshair', picking)
-    }
-    const ref = picking ? null : this.units.hit(latlng)
+    const ref = this.units.hit(latlng)
     if (ref !== this.hoverRef) {
       // a new reach (or none): the highlight, the cursor and the card's text, then its size, once
       this.hoverRef = ref
@@ -523,15 +566,21 @@ export class App {
       ${values}
       <div>Drains <b>${sqmi(f.da[r])} sq mi</b>, ${ft(f.lenM[r])} ft long</div>
       ${f.edited[r] ? `<div class="f">Screened on your edits of ${f.edited[r]} cross-section${f.edited[r] === 1 ? '' : 's'}</div>` : ''}
-      ${site !== undefined ? `<div>Candidate site <b>#${site + 1}</b></div>` : ''}`
+      ${site !== undefined ? `<div>Candidate site <b>#${site + 1}</b></div>` : this.inShortRun(ref) ? `<div>${esc(this.shortRunText())}</div>` : ''}`
+  }
+
+  /** A reach that meets every criterion but in a run shorter than the shortest site (not in a site,
+   * so the map does not color it). */
+  private inShortRun(ref: Ref): boolean {
+    return this.siteOf.get(ref) === undefined && this.result?.stage[fileOf(ref)]?.[rowOf(ref)] === STAGE.pass
+  }
+
+  private shortRunText(): string {
+    return `Meets the criteria, in a run shorter than ${count(this.criteria.minSiteFt)} ft`
   }
 
   private onClick(e: L.LeafletMouseEvent): void {
     if (this.step !== 1) return
-    if (this.sub === 'area' && this.mode === 'box') {
-      this.boxClick(e.latlng)
-      return
-    }
     const ref = this.units.hit(e.latlng)
     if (this.sub === 'area' && this.mode === 'walk') {
       if (ref === null) {
@@ -541,34 +590,49 @@ export class App {
       void this.setWalk(ref)
       return
     }
+    if (this.sub === 'area' && this.mode === 'reach') {
+      if (ref === null) this.nudgeCue()
+      else this.pickReach(ref)
+      return
+    }
     if (this.sub === 'area' && this.mode === 'huc') return   // the HUC12 outlines take the click
     if (ref !== null) this.showReach(ref)
   }
 
-  private boxClick(at: L.LatLng): void {
-    if (!this.corner) {
-      this.corner = at
-      this.boxLayer?.remove()
-      this.boxLayer = L.rectangle(L.latLngBounds(at, at), { pane: PANES.marks, color: '#c2410c', weight: 2, fill: false }).addTo(this.map)
-      this.updateCue()
+  /** A click in the Reaches study area: the reach joins the picks, or leaves them. */
+  private pickReach(ref: Ref): void {
+    const f = this.net.file(ref)
+    const files = pickedFiles(this.net, this.picks)
+    if (!this.picks.has(reachId(f, rowOf(ref))) && !files.includes(f.huc8) && files.length >= AREA_FILES) {
+      notify(`A study area holds reaches from up to ${AREA_FILES} HUC8 watersheds.`, { type: 'warning', seconds: 6 })
       return
     }
-    const b = L.latLngBounds(this.corner, at)
-    this.corner = null
-    this.boxLayer?.setBounds(b)
-    const box: [number, number, number, number] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
-    const files = this.idx ? huc8sInBox(this.idx, ...box) : []
-    if (files.length > AREA_FILES) {
-      notify(`That box meets ${files.length} HUC8 watersheds. Draw a smaller box (up to ${AREA_FILES}).`, { type: 'warning', seconds: 8 })
-      this.boxLayer?.remove()
-      this.boxLayer = null
-      this.updateCue()
+    if (togglePick(this.net, this.picks, ref) === 'not sampled') {
+      notify('That line was not sampled, so it has no values to screen.', { seconds: 4 })
       return
     }
-    this.box = box
     this.touch()
-    this.updateCue()
-    void this.ensureFiles(files).then(() => this.recompute())
+    this.recompute()
+  }
+
+  /** A box drawn with Shift held: every reach whose line runs through it joins the picks, once the
+   * files the box meets have loaded (the picks span AREA_FILES files at most, as any study area). */
+  private async pickBox(b: L.LatLngBounds, gen: number): Promise<void> {
+    if (!this.idx || this.mode !== 'reach' || gen !== this.areaGen) return
+    const [w, s, e, n] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
+    const files = huc8sInBox(this.idx, w, s, e, n)
+    if (new Set([...pickedFiles(this.net, this.picks), ...files]).size > AREA_FILES) {
+      notify(`A study area holds reaches from up to ${AREA_FILES} HUC8 watersheds. Draw a smaller box.`, { type: 'warning', seconds: 8 })
+      return
+    }
+    await this.ensureFiles(files)
+    // not if the user has moved on, cleared the area, or opened another screening while the files loaded
+    if (gen !== this.areaGen || this.step !== 1 || this.sub !== 'area' || this.mode !== 'reach') return
+    if (!addBox(this.net, this.picks, mercX(w), mercY(n), mercX(e), mercY(s))) {
+      notify('No new reaches with values in that box.', { seconds: 4 })
+      return
+    }
+    this.touch()
     this.recompute()
   }
 
@@ -638,6 +702,8 @@ export class App {
   }
 
   private updatePicks(): void {
+    // Shift and drag adds reaches only in the Reaches study area (elsewhere it zooms to a box, as Leaflet's)
+    this.boxSelect.enable(this.step === 1 && this.sub === 'area' && this.mode === 'reach')
     if (!this.pickingOn()) {
       this.m.picks.clearLayers()
       this.setHucHover(null, null)
@@ -748,42 +814,6 @@ export class App {
     this.afterPicks()
   }
 
-  // ---------------------------------------------------------------- examples
-
-  private async example(id: string): Promise<void> {
-    const ex = EXAMPLES.find((e) => e.id === id)
-    if (!ex || !this.idx) return
-    this.clearArea()
-    this.map.setView([ex.view[0], ex.view[1]], ex.view[2])
-    if (ex.kind === 'huc') {
-      this.mode = 'huc'
-      for (const p of ex.prefixes ?? []) for (const c of p.length === 12 ? [p] : await this.expand(p)) this.codes.add(c)
-      // the watersheds' names (the pane's chips, the report) come with their outlines, which the Study
-      // area step would load but an example now passes by
-      await Promise.all([...new Set([...this.codes].map((c) => c.slice(0, 4)))].map((h) => this.huc12Outline(h)))
-      this.lastPick = [...this.codes][0] ?? null
-      this.renderPane()
-      this.afterPicks()
-      await this.ensureFiles(hucFiles([...this.codes]))
-      this.recompute()
-      this.fitArea()
-    } else {
-      this.mode = 'walk'
-      this.renderPane()
-      await this.ensureFiles([ex.huc8!])
-      const ref = this.net.find(ex.walkId!, undefined, true)
-      if (ref < 0) {
-        notify('That example is not in this copy of the data.', { type: 'warning' })
-        return
-      }
-      await this.setWalk(ref)
-      this.fitArea()
-    }
-    // the area is set, so on to screening, where a click on a reach opens its card (on the Study area
-    // step a click changes the area); not if the user has moved on while the data loaded
-    if (this.result && this.step === 1 && this.sub === 'area') this.goSub('screen')
-  }
-
   /** The map framed on the study area. */
   fitArea(): void {
     // Web Mercator units: y grows southward, so the north edge is the smallest y
@@ -804,18 +834,18 @@ export class App {
       }
     })
     if (!Number.isFinite(west)) return
-    this.map.fitBounds(L.latLngBounds([latOf(south), lonOf(west)], [latOf(north), lonOf(east)]),
-      { paddingTopLeft: [400, 30], paddingBottomRight: [30, 30] })
+    const bounds = L.latLngBounds([latOf(south), lonOf(west)], [latOf(north), lonOf(east)])
+    // never wider than the study area's reaches show: an area too big to fit opens on its middle
+    if (this.map.getBoundsZoom(bounds, false, L.point(430, 60)) < AREA_ZOOM) this.map.setView(bounds.getCenter(), AREA_ZOOM)
+    else this.map.fitBounds(bounds, { paddingTopLeft: [400, 30], paddingBottomRight: [30, 30] })
   }
 
   private clearArea(): void {
     this.codes.clear()
     this.lastPick = null
     this.walkFrom = null
-    this.box = null
-    this.corner = null
-    this.boxLayer?.remove()
-    this.boxLayer = null
+    this.picks.clear()
+    this.areaGen++
     this.setPin(null)
     this.selected = null
     this.restylePicks()
@@ -832,7 +862,6 @@ export class App {
       const a = act.dataset.act!
       if (a === 'sub') this.goSub(act.dataset.sub as Sub)
       else if (a === 'mode') this.setMode(act.dataset.mode as Mode)
-      else if (a === 'example') void this.example(act.dataset.id!)
       else if (a === 'whole10') void this.addWhole(10)
       else if (a === 'whole8') void this.addWhole(8)
       else if (a === 'clear') {
@@ -841,14 +870,14 @@ export class App {
         this.recompute()
         this.renderPane()
       } else if (a === 'unpick') {
-        this.codes.delete(act.dataset.code!)
+        const code = act.dataset.code!
+        this.codes.delete(code)
+        // "Add whole HUC10" works from the last watershed still picked
+        if (this.lastPick === code) this.lastPick = [...this.codes].pop() ?? null
         this.afterPicks()
       } else if (a === 'fit') this.fitArea()
-      else if (a === 'color') {
-        this.colorBy = act.dataset.by as ColorBy
-        this.restyle()
-        this.renderPane()
-      } else if (a === 'methods') showMethods(this.idx)
+      else if (a === 'reset-criteria') this.resetCriteria()
+      else if (a === 'methods') showMethods(this.idx)
       else if (a === 'site') this.selectSite(act.dataset.id!, true)
       else if (a === 'site-details') {
         e.stopPropagation()
@@ -862,7 +891,6 @@ export class App {
     this.pane.addEventListener('change', (e) => {
       const t = e.target as HTMLInputElement | HTMLSelectElement
       if (t.dataset.crit !== undefined) this.readCriteria()
-      else if (t.id === 'fpr-preset') this.applyPreset(t.value)
       else if (t.id === 'fpr-sort') {
         this.sort = t.value as SortKey
         this.ranked = this.result ? rankSites(this.result.sites, this.sort) : []
@@ -891,6 +919,21 @@ export class App {
       clearTimeout(this.inputTimer)
       this.inputTimer = window.setTimeout(() => this.readCriteria(), 350)
     })
+    // More settings stays as the user left it across redraws ('toggle' does not bubble)
+    this.pane.addEventListener('toggle', (e) => {
+      const t = e.target as HTMLElement
+      if (t.id === 'fpr-more') this.moreOpen = (t as HTMLDetailsElement).open
+    }, true)
+  }
+
+  /** The legend's switch: what the map's colors show. */
+  private wireLegend(): void {
+    this.m.legend.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-by]')
+      if (!b || b.disabled || b.dataset.by === this.colorBy) return
+      this.colorBy = b.dataset.by as ColorBy
+      this.restyle()
+    })
   }
 
   private goStep(n: number): void {
@@ -911,7 +954,6 @@ export class App {
       return
     }
     this.sub = sub
-    if (sub === 'area') this.corner = null
     if (sub === 'shortlist' && this.colorBy !== 'match') {
       this.colorBy = 'match'
       this.restyle()
@@ -921,10 +963,12 @@ export class App {
     this.renderPane()
   }
 
+  /** Each way keeps its own area while the user switches between them, so a stray click never loses
+   * hand-picked reaches; the study area is the chosen way's, and Clear empties them all. */
   private setMode(mode: Mode): void {
     if (mode === this.mode) return
-    this.clearArea()
     this.mode = mode
+    this.setPin(mode === 'walk' && this.walkFrom ? this.findReach(this.walkFrom.id) : null)
     this.touch()
     this.recompute()
     this.updatePicks()
@@ -970,17 +1014,26 @@ export class App {
       if (sum) sum.innerHTML = this.areaSummary()
       const next = this.pane.querySelector<HTMLButtonElement>('#fpr-next-screen')
       if (next) next.disabled = !this.result
-      this.pane.querySelectorAll<HTMLButtonElement>('[data-act="whole10"], [data-act="whole8"]').forEach((b) => { b.disabled = !this.lastPick })
     } else if (this.sub === 'screen') {
+      // the boxes are never redrawn here: a box being typed in keeps its focus
       const set = (id: string, html: string) => {
         const e = this.pane.querySelector(`#${id}`)
         if (e) e.innerHTML = html
       }
+      set('fpr-result', this.resultHtml())
+      for (const row of this.leftCounts()) {
+        const n = this.pane.querySelector<HTMLElement>(`#fpr-left-${row.key}`)
+        if (n) {
+          n.innerHTML = row.reaches === null ? '' : `${count(row.reaches)}<span class="visually-hidden"> reaches left</span>`
+          n.title = row.reaches === null ? '' : `${count(row.reaches)} reach${row.reaches === 1 ? '' : 'es'}, ${mi(row.lengthM)} mi`
+        }
+        this.pane.querySelector(`#fpr-row-${row.key}`)?.classList.toggle('off', row.off)
+      }
       set('fpr-hist-bhr', this.histogram('bhr'))
       set('fpr-hist-er', this.histogram('er'))
-      set('fpr-funnel', this.funnelHtml())
-      const preset = this.pane.querySelector<HTMLSelectElement>('#fpr-preset')
-      if (preset) preset.value = presetOf(this.criteria)?.id ?? 'custom'
+      const changed = this.moreChanged()
+      set('fpr-more-n', changed ? `${changed} changed` : '')
+      set('fpr-gap-unit', this.criteria.gapReaches === 1 ? 'reach' : 'reaches')
       const next = this.pane.querySelector('#fpr-next-short')
       if (next) next.textContent = `Next: shortlist (${count(this.ranked.length)})`
     } else if (this.sub === 'shortlist') {
@@ -1001,65 +1054,49 @@ export class App {
 
   // the Study area sub-step
 
+  /** Where to screen: the three choices, one line on how each works (the map's cue says when to zoom
+   * in), what is picked, and the study area in one line. */
   private areaPane(): string {
-    const ready = this.idx !== null
-    const modes: { key: Mode, label: string }[] = [
-      { key: 'huc', label: 'Watersheds' }, { key: 'walk', label: 'Upstream of a point' }, { key: 'box', label: 'Draw a box' },
-    ]
-    const how = this.mode === 'huc'
-      ? '<p>Zoom in and click HUC12 watersheds to add or remove them. Add the whole HUC10 or HUC8 of the last one you picked.</p>'
-      : this.mode === 'walk'
-        ? '<p>Zoom in until streams show, then click one. Everything upstream of it becomes the study area.</p>'
-        : '<p>Click two opposite corners on the map. Every reach in the box becomes the study area.</p>'
+    const hint = MODES.find((m) => m.key === this.mode)?.hint ?? ''
     return `
-      <div class="fpr-instr"><p>Choose where to screen. Reaches show on the map wherever the grid is built.</p></div>
-      <div class="fpr-search"><input id="fpr-search" class="form-control form-control-sm" type="search" placeholder="Find a place, or enter lat, lon" autocomplete="off" aria-label="Find a place"><div id="fpr-search-menu" class="fpr-ac-menu" hidden role="listbox"></div></div>
-      <div class="fpr-seg" role="tablist">${modes.map((m) => `<button type="button" data-act="mode" data-mode="${m.key}" class="${m.key === this.mode ? 'on' : ''}">${esc(m.label)}</button>`).join('')}</div>
-      <div class="fpr-note" style="margin:0 0 8px">${how}</div>
-      ${this.mode === 'huc' ? `<div id="fpr-area-picks"></div>
-        <div class="fpr-actions" style="margin-top:6px">
-          <button type="button" class="btn btn-outline-primary btn-sm" data-act="whole10">Add whole HUC10</button>
-          <button type="button" class="btn btn-outline-primary btn-sm" data-act="whole8">Add whole HUC8</button>
-        </div>` : ''}
-      <div class="fpr-group">Examples</div>
-      <div class="fpr-chips">${EXAMPLES.map((e) => `<button type="button" class="fpr-chip" data-act="example" data-id="${e.id}"${ready ? '' : ' disabled'}>${esc(e.label)}</button>`).join('')}</div>
+      <div class="fpr-search"><input id="fpr-search" class="form-control form-control-sm" type="search" placeholder="Find a place or lat, lon" autocomplete="off" aria-label="Find a place"><div id="fpr-search-menu" class="fpr-ac-menu" hidden role="listbox"></div></div>
+      <div class="fpr-seg" role="tablist">${MODES.map((m) => `<button type="button" data-act="mode" data-mode="${m.key}" class="${m.key === this.mode ? 'on' : ''}">${esc(m.label)}</button>`).join('')}</div>
+      <div class="fpr-note fpr-mode-hint">${esc(hint)}</div>
+      ${this.mode === 'huc' ? '<div id="fpr-area-picks"></div>' : ''}
       <div id="fpr-area-summary"></div>
-      <div class="fpr-actions">
+      <div class="fpr-actions fpr-sticky">
         <button type="button" class="btn btn-outline-secondary btn-sm" data-act="clear">Clear</button>
         <button type="button" class="btn btn-primary btn-sm" id="fpr-next-screen" data-act="sub" data-sub="screen">Next: screen</button>
       </div>`
   }
 
+  /** The watersheds picked, with the whole HUC10 or HUC8 of the last one (nothing until one is picked). */
   private picksHtml(): string {
-    if (!this.codes.size) return '<div class="fpr-note">No watersheds picked yet.</div>'
+    if (!this.codes.size) return ''
     const codes = [...this.codes].sort()
     const shown = codes.slice(0, 12)
     return `<div class="fpr-chips">${shown.map((c) => `<button type="button" class="fpr-chip on" data-act="unpick" data-code="${c}" title="Remove HUC12 ${c}">${esc(this.huc12Names.get(c) || c)} &times;</button>`).join('')}</div>
-      ${codes.length > shown.length ? `<div class="fpr-note">and ${codes.length - shown.length} more HUC12 watersheds</div>` : ''}`
+      ${codes.length > shown.length ? `<div class="fpr-note">and ${codes.length - shown.length} more HUC12 watersheds</div>` : ''}
+      <div class="fpr-actions fpr-whole">
+        <button type="button" class="btn btn-outline-primary btn-sm" data-act="whole10"${this.lastPick ? '' : ' disabled'}>Add whole HUC10</button>
+        <button type="button" class="btn btn-outline-primary btn-sm" data-act="whole8"${this.lastPick ? '' : ' disabled'}>Add whole HUC8</button>
+      </div>`
   }
 
-  private areaStats(): { reaches: number, m: number, unsampled: number, caution: number, nodata: number } {
+  /** The study area's reaches with values to screen (lines not sampled left out) and their length. */
+  private areaStats(): { reaches: number, m: number } {
     let reaches = 0
     let m = 0
-    let unsampled = 0
-    let caution = 0
-    let nodata = 0
     this.net.files.forEach((f, fi) => {
       const mask = this.masks[fi]
       if (!mask) return
       for (let r = 0; r < f.rows; r++) {
-        if (!mask[r]) continue
-        if (f.q[r] === Q_UNSAMPLED) {
-          unsampled++
-          continue
-        }
+        if (!mask[r] || f.q[r] === Q_UNSAMPLED) continue
         reaches++
         m += f.lenM[r]
-        if (f.q[r] === Q_CAUTION) caution++
-        if (f.q[r] === Q_NODATA) nodata++
       }
     })
-    return { reaches, m, unsampled, caution, nodata }
+    return { reaches, m }
   }
 
   private areaText(): string {
@@ -1073,29 +1110,28 @@ export class App {
       const name = ref !== null ? this.net.file(ref).name[rowOf(ref)] : ''
       return `Everything upstream of ${name || 'an unnamed stream'}, reach ${this.walkFrom.id} (HUC8 ${this.walkFrom.huc8})`
     }
-    if (this.mode === 'box' && this.box) {
-      const [w, s, e, n] = this.box
-      return `A box from ${s.toFixed(4)}, ${w.toFixed(4)} to ${n.toFixed(4)}, ${e.toFixed(4)}`
+    if (this.mode === 'reach' && this.picks.size) {
+      const n = this.picks.size
+      const names = [...new Set([...this.picks.values()].map((ref) => this.net.file(ref).name[rowOf(ref)]).filter(Boolean))].sort()
+      const more = names.length - 3
+      const on = names.length ? ` on ${names.slice(0, 3).join(', ')}${more > 0 ? `, and ${more} more stream${more === 1 ? '' : 's'}` : ''}` : ''
+      return `${count(n)} picked reach${n === 1 ? '' : 'es'}${on}`
     }
     return 'No study area'
   }
 
+  /** The study area in one line, and what of it is not built yet. */
   private areaSummary(): string {
     if (!this.hasArea()) return ''
     const st = this.areaStats()
     const partial = this.areaHuc8s().filter((h) => this.idx?.huc8[h]?.status === 'partial')
     const missing = this.mode === 'huc' ? hucFiles([...this.codes]).filter((h) => !this.idx?.huc8[h]) : []
-    return `<div class="fpr-card" style="margin-top:12px">
-      <h5>Study area</h5>
-      <div class="fpr-row"><span>Reaches</span><b>${count(st.reaches)}</b></div>
-      <div class="fpr-row"><span>Stream length</span><b>${mi(st.m)} mi</b></div>
-      <div class="fpr-row"><span>Use with caution</span><b>${count(st.caution)}</b></div>
-      <div class="fpr-row"><span>Not enough data</span><b>${count(st.nodata)}</b></div>
-      <div class="fpr-row"><span>Lines not sampled</span><b>${count(st.unsampled)}</b></div>
+    return `<div class="fpr-area-line">
+        <span><b>${count(st.reaches)}</b> reach${st.reaches === 1 ? '' : 'es'}, ${mi(st.m)} mi</span>
+        <button type="button" class="btn btn-link btn-sm p-0" data-act="fit">Zoom to area</button>
+      </div>
       ${partial.length ? '<div class="fpr-note warn">Part of this area is in grid regions not built yet.</div>' : ''}
-      ${missing.length ? `<div class="fpr-note warn">No reaches are built yet for HUC8 ${missing.map(esc).join(', ')}.</div>` : ''}
-      <div class="fpr-actions" style="margin-top:6px"><button type="button" class="btn btn-link btn-sm p-0" data-act="fit">Zoom to the study area</button></div>
-    </div>`
+      ${missing.length ? `<div class="fpr-note warn">No reaches are built yet for HUC8 ${missing.map(esc).join(', ')}.</div>` : ''}`
   }
 
   private areaHuc8s(): string[] {
@@ -1108,34 +1144,39 @@ export class App {
 
   // the Screen sub-step
 
+  /** The result on top, the three criteria most teams set with the reaches each leaves, and the rest
+   * under More settings. The numbers are filled in by refreshPane, so typing never redraws a box. */
   private screenPane(): string {
     const c = this.criteria
-    const num = (key: keyof Criteria, v: number | null, step: string, min = '0') =>
-      `<input type="number" class="form-control" data-crit="${key}" value="${v === null ? '' : v}" step="${step}" min="${min}" aria-label="${key}">`
+    const num = (key: keyof Criteria, v: number | null, step: string, min: string, placeholder: string, describedBy = '') =>
+      `<input type="number" class="form-control" id="crit-${key}" data-crit="${key}" value="${v === null ? '' : v}" step="${step}" min="${min}" placeholder="${placeholder}"${describedBy ? ` aria-describedby="${describedBy}"` : ''}>`
     const box = (key: keyof Criteria, on: boolean) => `<input type="checkbox" class="form-check-input" data-crit="${key}" id="crit-${key}"${on ? ' checked' : ''}>`
-    const colors: { key: ColorBy, label: string }[] = [{ key: 'bhr', label: 'Bank height ratio' }, { key: 'er', label: 'Entrenchment ratio' }, { key: 'match', label: 'Criteria' }]
+    // an empty box turns its criterion off; the count beside it is what is left after it
+    const row = (key: keyof Criteria, label: string, v: number | null, step: string, min: string, unit: string, left: 'da' | 'bhr' | 'er') =>
+      `<div class="fpr-crit" id="fpr-row-${left}"><div class="fpr-crit-row">
+        <label for="crit-${key}">${label}</label>${num(key, v, step, min, 'off', `fpr-left-${left}`)}<span class="fpr-unit">${unit}</span><b class="fpr-left" id="fpr-left-${left}"></b></div>
+        ${left === 'da' ? '' : `<div id="fpr-hist-${left}"></div>`}</div>`
+    const line = (inner: string) => `<div class="fpr-crit"><div class="fpr-crit-line">${inner}</div></div>`
     return `
-      <div class="fpr-group">Color the map by</div>
-      <div class="fpr-seg">${colors.map((k) => `<button type="button" data-act="color" data-by="${k.key}" class="${k.key === this.colorBy ? 'on' : ''}">${esc(k.label)}</button>`).join('')}</div>
-      <div class="fpr-group">Criteria <small>starting values for the team to set</small></div>
-      <select id="fpr-preset" class="form-select form-select-sm fpr-preset" aria-label="Starting values">
-        ${PRESETS.map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}<option value="custom">Custom</option></select>
-      <div class="fpr-crit"><div class="fpr-crit-line">${box('includeCaution', c.includeCaution)}<label for="crit-includeCaution">Include reaches marked "use with caution"</label></div></div>
-      <div class="fpr-crit"><div class="fpr-crit-line">${box('skipCanals', c.skipCanals)}<label for="crit-skipCanals">Leave out canals and ditches</label></div></div>
-      <div class="fpr-crit"><div class="fpr-crit-line"><label>Drainage area at least</label>${num('daMinSqmi', c.daMinSqmi, '0.5')}<span class="fpr-unit">sq mi</span></div>
-        <div class="fpr-crit-line" style="margin-top:4px"><label>and at most</label>${num('daMaxSqmi', c.daMaxSqmi, '10')}<span class="fpr-unit">sq mi</span></div></div>
-      <div class="fpr-crit"><div class="fpr-crit-line"><label>Bank height ratio at least</label>${num('bhrMin', c.bhrMin, '0.05')}<span class="fpr-unit"></span></div>
-        <div class="fpr-crit-sub">${box('countCapped', c.countCapped)}<label for="crit-countCapped">Count reaches that read "at least 2.00"</label></div>
-        <div id="fpr-hist-bhr"></div></div>
-      <div class="fpr-crit"><div class="fpr-crit-line"><label>Entrenchment ratio at least</label>${num('erMin', c.erMin, '0.1', '1')}<span class="fpr-unit"></span></div>
-        <div id="fpr-hist-er"></div></div>
-      <div class="fpr-crit"><div class="fpr-crit-line"><label>Shortest site</label>${num('minSiteFt', c.minSiteFt, '100')}<span class="fpr-unit">ft</span></div></div>
-      <div class="fpr-crit"><div class="fpr-crit-line"><label>Join a site across gaps of up to</label>${num('gapReaches', c.gapReaches, '1')}<span class="fpr-unit">reaches</span></div></div>
-      <div class="fpr-crit fpr-planned-crit">Additional metrics from FluvialGeomorph (planned)</div>
-      <div class="fpr-note">Leave a box empty to drop that criterion. <a href="#" data-act="methods">Methods and limits</a></div>
-      <div class="fpr-group">How the criteria narrow the reaches</div>
-      <div id="fpr-funnel"></div>
-      <div class="fpr-actions">
+      <div class="fpr-result" id="fpr-result" aria-live="polite"></div>
+      <div class="fpr-group">Keep reaches with <small>reaches left</small></div>
+      ${row('daMinSqmi', 'Drainage area at least', c.daMinSqmi, '0.5', '0', 'sq mi', 'da')}
+      ${row('bhrMin', 'Bank height ratio at least', c.bhrMin, '0.05', '0', '', 'bhr')}
+      ${row('erMin', 'Entrenchment ratio at least', c.erMin, '0.1', '1', '', 'er')}
+      <details class="fpr-more" id="fpr-more"${this.moreOpen ? ' open' : ''}>
+        <summary>More settings <span class="fpr-more-n" id="fpr-more-n"></span></summary>
+        ${line(`<label for="crit-minSiteFt">Shortest site</label>${num('minSiteFt', c.minSiteFt, '100', '0', '0')}<span class="fpr-unit">ft</span>`)}
+        ${line(`<label for="crit-gapReaches">Allow gaps of up to</label>${num('gapReaches', c.gapReaches, '1', '0', '0')}<span class="fpr-unit" id="fpr-gap-unit">reach</span>`)}
+        ${line(`<label for="crit-daMaxSqmi">Drainage area at most</label>${num('daMaxSqmi', c.daMaxSqmi, '10', '0', 'none')}<span class="fpr-unit">sq mi</span>`)}
+        ${line(`${box('includeCaution', c.includeCaution)}<label for="crit-includeCaution">Include reaches marked "use with caution"</label>`)}
+        ${line(`${box('countCapped', c.countCapped)}<label for="crit-countCapped">Count reaches whose BHR reads "at least 2.00"</label>`)}
+        ${line(`${box('skipCanals', c.skipCanals)}<label for="crit-skipCanals">Leave out canals and ditches</label>`)}
+        <div class="fpr-more-links">
+          <button type="button" class="btn btn-link btn-sm p-0" data-act="reset-criteria">Reset to starting values</button>
+          <button type="button" class="btn btn-link btn-sm p-0" data-act="methods">Methods and limits</button>
+        </div>
+      </details>
+      <div class="fpr-actions fpr-sticky">
         <button type="button" class="btn btn-outline-secondary btn-sm" data-act="sub" data-sub="area">Back</button>
         <button type="button" class="btn btn-primary btn-sm" id="fpr-next-short" data-act="sub" data-sub="shortlist">Next: shortlist</button>
       </div>`
@@ -1160,13 +1201,17 @@ export class App {
     this.recompute()
   }
 
-  private applyPreset(id: string): void {
-    const p = PRESETS.find((x) => x.id === id)
-    if (!p) return
-    this.criteria = { ...p.criteria }
+  private resetCriteria(): void {
+    this.criteria = defaultCriteria()
     this.touch()
     this.renderPane()
     this.recompute()
+  }
+
+  /** How many of the settings under More settings differ from the starting values. */
+  private moreChanged(): number {
+    const d = defaultCriteria()
+    return MORE_KEYS.filter((k) => this.criteria[k] !== d[k]).length
   }
 
   private histogram(which: 'bhr' | 'er'): string {
@@ -1190,14 +1235,16 @@ export class App {
     })
     const max = Math.max(1, ...bins)
     const W = 320
-    const H = 58
+    const H = 40
     const bw = (W - 4) / (nb + 1)
     const thr = which === 'bhr' ? this.criteria.bhrMin : this.criteria.erMin
+    // a bar left out shows faint: below the minimum, or BHR's "at least 2.00" when those are not counted
+    const capOut = which === 'bhr' && thr !== null && !this.criteria.countCapped
     const bars = bins.map((n, i) => {
       const v0 = lo + i * step
       const h = (n / max) * (H - 14)
       const color = i === nb && which === 'bhr' ? AT_CAP : binColor(binOf(spec, v0 + step / 2))
-      const below = thr !== null && i < nb && v0 + step / 2 < thr
+      const below = thr !== null && ((i < nb && v0 + step / 2 < thr) || (i === nb && capOut))
       return `<rect x="${(2 + i * bw).toFixed(1)}" y="${(H - 12 - h).toFixed(1)}" width="${(bw - 1).toFixed(1)}" height="${h.toFixed(1)}" fill="${color}" opacity="${below ? 0.3 : 0.95}"><title>${i === nb ? (which === 'bhr' ? 'at least 2.00' : `${hi.toFixed(1)} or more`) : `${v0.toFixed(1)} to ${(v0 + step).toFixed(1)}`}: ${n}</title></rect>`
     }).join('')
     const tx = thr === null ? null : 2 + Math.max(0, Math.min(nb, (thr - lo) / step)) * bw
@@ -1207,19 +1254,34 @@ export class App {
     return `<svg class="fpr-hist" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(spec.title)} of the measured reaches">${bars}${line}${labels}</svg>`
   }
 
-  private funnelHtml(): string {
-    if (!this.result) return '<div class="fpr-note">Choose a study area first.</div>'
-    const first = Math.max(1, this.result.funnel[0]?.reaches ?? 1)
-    const rows = this.result.funnel.map((s) => `<div class="fpr-funnel-row" title="${mi(s.lengthM)} mi">
-        <span class="fpr-funnel-label">${esc(s.label)}</span>
-        <span class="fpr-funnel-track"><span class="fpr-funnel-fill" style="display:block;width:${((s.reaches / first) * 100).toFixed(1)}%"></span></span>
-        <span class="fpr-funnel-val">${count(s.reaches)}</span></div>`).join('')
+  /** The Screen step's result: the candidate sites, or why there are none. */
+  private resultHtml(): string {
+    if (!this.result) return '<div class="fpr-result-sub">Choose a study area first.</div>'
+    const n = this.ranked.length
+    if (!n) {
+      const pass = this.result.pass
+      const why = pass
+        ? `${count(pass)} ${pass === 1 ? 'reach passes' : 'reaches pass'}, but none in a run of ${count(this.criteria.minSiteFt)} ft. Lower the shortest site under More settings.`
+        : 'No reach meets every criterion. Lower a minimum or empty a box.'
+      return `<div class="fpr-result-head"><span class="fpr-result-n">No candidate sites</span></div>
+        <div class="fpr-result-sub">${esc(why)}</div>`
+    }
+    const measured = this.result.funnel.find((s) => s.key === 'measured')?.reaches ?? 0
     const total = this.ranked.reduce((a, s) => a + s.lengthM, 0)
-    return `${rows}<div class="fpr-funnel-row last" title="${mi(total)} mi">
-        <span class="fpr-funnel-label"><b>Candidate sites</b>, ${count(this.criteria.minSiteFt)} ft or longer</span>
-        <span class="fpr-funnel-track"><span class="fpr-funnel-fill" style="display:block;width:${Math.min(100, (this.ranked.length / first) * 100 * 10).toFixed(1)}%"></span></span>
-        <span class="fpr-funnel-val">${count(this.ranked.length)}</span></div>
-      <div class="fpr-note">${mi(total)} mi of stream in candidate sites.${this.result.shortRuns ? ` ${count(this.result.shortRuns)} more reaches meet the criteria in runs shorter than the shortest site.` : ''}</div>`
+    return `<div class="fpr-result-head"><span class="fpr-result-n">${count(n)} candidate site${n === 1 ? '' : 's'}</span><span class="fpr-result-mi">${mi(total)} mi</span></div>
+      <div class="fpr-result-sub">from ${count(measured)} measured reach${measured === 1 ? '' : 'es'}</div>`
+  }
+
+  /** The reaches left after each criterion row, from the funnel (a criterion that is off narrows
+   * nothing, so its row carries the count above it). */
+  private leftCounts(): { key: 'da' | 'bhr' | 'er', reaches: number | null, lengthM: number, off: boolean }[] {
+    const funnel = this.result?.funnel ?? []
+    let before = funnel.find((s) => s.key === 'measured')
+    return (['da', 'bhr', 'er'] as const).map((key) => {
+      const s = funnel.find((x) => x.key === key)
+      if (s) before = s
+      return { key, reaches: before ? before.reaches : null, lengthM: before ? before.lengthM : 0, off: !s }
+    })
   }
 
   // the Shortlist sub-step
@@ -1354,6 +1416,7 @@ export class App {
     let what = 'screening'
     if (this.mode === 'huc' && this.codes.size) what = this.codes.size === 1 ? [...this.codes][0] : `${this.codes.size}-huc12s`
     else if (this.mode === 'walk' && this.walkFrom) what = `upstream-${this.walkFrom.id}`
+    else if (this.mode === 'reach' && this.picks.size) what = `${this.picks.size}-reaches`
     return `floodplain-${what}-${day}`
   }
 
@@ -1416,7 +1479,8 @@ export class App {
     const site = this.siteOf.get(ref)
     return `<p class="fpr-note" style="margin-top:0">Reach ${esc(reachId(f, r))} · HUC12 ${esc(huc12Text(f, r) || 'n/a')} · region ${esc(f.vpu[r])}
       · ${ft(f.lenM[r])} ft long, drains ${sqmi(f.da[r])} sq mi</p>
-      ${site !== undefined ? `<p>Part of candidate site <b>#${site + 1}</b>. <a href="#" data-site="${esc(this.ranked[site].id)}">Open the site</a></p>` : ''}`
+      ${site !== undefined ? `<p>Part of candidate site <b>#${site + 1}</b>. <a href="#" data-site="${esc(this.ranked[site].id)}">Open the site</a></p>`
+        : this.inShortRun(ref) ? `<p>${esc(this.shortRunText())}, so it is not a candidate site.</p>` : ''}`
   }
 
   /** The reach popup's facts: the values it is screened on (the user's where edited) and the notes. */
@@ -1594,6 +1658,7 @@ export class App {
     this.decisions.clear()
     this.edits.clearAll(this.net.files)
     this.showAll = false
+    this.moreOpen = false
     this.sub = 'area'
     this.dirty = false
     this.goStep(1)
@@ -1606,15 +1671,23 @@ export class App {
     for (const [k, v] of this.decisions) if (!v.keep || v.note) decisions[k] = v
     return {
       format: 'fpr-screening', version: 2, app_version: APP_VERSION, data_version: this.version, saved_at: new Date().toISOString(),
-      area: { mode: this.mode, codes: [...this.codes].sort(), walk: this.walkFrom, box: this.box },
+      // the area of the way chosen (each way keeps its own while the user switches between them)
+      area: {
+        mode: this.mode, codes: this.mode === 'huc' ? [...this.codes].sort() : [], walk: this.mode === 'walk' ? this.walkFrom : null, box: null,
+        ...(this.mode === 'reach' ? { reaches: savedPicks(this.net, this.picks) } : {}),
+      },
       criteria: this.criteria, color_by: this.colorBy, sort: this.sort, sub: this.sub, decisions, edits: this.edits.toJSON(),
     }
   }
 
   async open(s: SavedScreening): Promise<void> {
     this.reset()
-    this.mode = s.area.mode
+    // a box saved by version 0.2 opens as the reaches it holds
+    const saved = s.area.mode
+    this.mode = saved === 'box' ? 'reach' : MODES.some((m) => m.key === saved) ? saved : 'huc'
     this.criteria = { ...defaultCriteria(), ...s.criteria }
+    // a screening whose hidden settings differ from the starting values opens with them in view
+    this.moreOpen = this.moreChanged() > 0
     this.colorBy = (['bhr', 'er', 'match'].includes(s.color_by) ? s.color_by : 'bhr') as ColorBy
     this.sort = (SORTS.some((x) => x.key === s.sort) ? s.sort : 'length') as SortKey
     for (const [k, v] of Object.entries(s.decisions ?? {})) this.decisions.set(k, { keep: v.keep !== false, note: String(v.note ?? '') })
@@ -1635,11 +1708,17 @@ export class App {
       await this.ensureFiles([s.area.walk.huc8])
       await this.expandWalk(s.area.walk.id)
       this.setPin(this.findReach(s.area.walk.id))
-    } else if (this.mode === 'box' && s.area.box && this.idx) {
-      this.box = s.area.box
+    } else if (saved === 'box' && s.area.box && this.idx) {
       const [w, so, e, n] = s.area.box
-      this.boxLayer = L.rectangle([[so, w], [n, e]], { pane: PANES.marks, color: '#c2410c', weight: 2, fill: false }).addTo(this.map)
       await this.ensureFiles(huc8sInBox(this.idx, w, so, e, n).slice(0, AREA_FILES))
+      this.picks = picksFromBox(this.net, s.area.box)
+    } else if (this.mode === 'reach' && this.idx) {
+      const list = s.area.reaches ?? []
+      await this.ensureFiles([...new Set(list.map((x) => x.huc8))].slice(0, AREA_FILES))
+      // a file that did not load says so itself; of the rest, the reaches the data no longer hold
+      const { picks, missing } = resolvePicks(this.net, list.filter((x) => this.net.has(x.huc8)))
+      this.picks = picks
+      if (missing) notify(`${missing} picked reach${missing === 1 ? ' was' : 'es were'} dropped: the data no longer hold ${missing === 1 ? 'it' : 'them'}.`, { type: 'warning', seconds: 10 })
     }
     this.recompute()
     this.fitArea()
@@ -1664,8 +1743,10 @@ export class App {
         text = `${name ? `${name}, ` : ''}HUC12 ${this.hucHover}. ${click}`
       } else if (this.mode === 'walk' && z < VIEW_ZOOM) text = 'Zoom in until streams show, then click one.'
       else if (this.mode === 'walk' && !this.walkFrom) text = 'Click a stream. Everything upstream becomes the study area.'
-      else if (this.mode === 'box') text = this.corner ? 'Click the opposite corner.' : this.box ? '' : 'Click the first corner of the box.'
+      else if (this.mode === 'reach' && this.boxSelect.drawing) text = 'Let go to add the reaches in the box.'
+      else if (this.mode === 'reach' && z < VIEW_ZOOM) text = 'Zoom in until streams show, then click reaches.'
     } else if (!this.result && z < VIEW_ZOOM && this.idx) text = 'Zoom in to see reaches.'
+    else if (this.result && z < AREA_ZOOM) text = 'Zoom in to see the study area.'
     this.cue.innerHTML = text ? `<div class="fpr-cue">${esc(text)}</div>` : ''
   }
 

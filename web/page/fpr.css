@@ -124,13 +124,11 @@ a { color: var(--fpr-accent); }
 #fpr-map { position: absolute; inset: 0; }
 .fpr-map-wrap .leaflet-container { font-family: var(--font-body); background: #e8edf3; }
 .fpr-map-wrap .leaflet-top { margin-top: 4px; }
-.fpr-map-wrap .leaflet-top.leaflet-left { left: calc(var(--pane-width) + 24px); }
+/* the map's controls in one column, top right: Layers, zoom, legend (map.ts) */
 .fpr-map-wrap .leaflet-top.leaflet-right { display: flex; flex-direction: column; align-items: flex-end; }
 .fpr-map-wrap .leaflet-top.leaflet-right .leaflet-control { float: none; }
 .fpr-unit-canvas { pointer-events: none; }
 .leaflet-container.fpr-pick { cursor: pointer; }
-/* over a reach, its card is the one box by the pointer (the watershed names under it wait) */
-.leaflet-container.fpr-pick .fpr-tip-area { visibility: hidden; }
 .leaflet-container.fpr-crosshair { cursor: crosshair; }
 
 /* ============ 5. the left workflow pane ============ */
@@ -197,28 +195,52 @@ a { color: var(--fpr-accent); }
 .fpr-ac-name { font-size: 12.5px; color: var(--fpr-text); font-weight: 600; }
 .fpr-ac-meta { font-size: 10.5px; color: #8a93a3; }
 
-/* criteria */
+/* the Study area step: one line on the chosen way, the picks, the area in one line */
+.fpr-mode-hint { margin: 0 0 10px; }
+.fpr-whole { margin-top: 8px; }
+.fpr-area-line { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 12px;
+  background: #f5f8fb; border: 1px solid var(--card-border); border-radius: 6px; padding: 8px 12px; font-size: 13px; }
+.fpr-area-line b { color: var(--fpr-title); font-variant-numeric: tabular-nums; }
+.fpr-area-line .btn { font-size: 12px; white-space: nowrap; }
+
+/* the Screen step: the result, the criteria with the reaches each leaves, More settings */
+.fpr-result { background: #f5f8fb; border: 1px solid var(--card-border); border-radius: 6px; padding: 9px 12px 10px; margin-bottom: 14px; }
+.fpr-result-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.fpr-result-n { font-family: var(--font-head); font-weight: 700; font-size: 16px; color: var(--fpr-title); }
+.fpr-result-mi { font-size: 12.5px; color: var(--fpr-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fpr-result-sub { font-size: 12px; color: var(--fpr-muted); margin-top: 1px; line-height: 1.4; }
 .fpr-crit { padding: 5px 0; border-bottom: 1px solid #eef1f6; font-size: 12.5px; }
 .fpr-crit:last-child { border-bottom: 0; }
 .fpr-crit-line { display: flex; align-items: center; gap: 8px; }
 .fpr-crit-line label { flex: 1; margin: 0; line-height: 1.3; }
 .fpr-crit input[type="number"] { width: 78px; font-size: 12.5px; padding: 2px 6px; text-align: right; }
 .fpr-crit input[type="checkbox"] { margin: 0; flex: none; }
-.fpr-crit-sub { font-size: 11.5px; color: var(--fpr-muted); margin: 3px 0 0 0; display: flex; align-items: center; gap: 6px; }
-.fpr-crit.off { color: #a7b0bd; }
-.fpr-planned-crit { color: #8a93a3; font-style: italic; }
+.fpr-crit-row { display: grid; grid-template-columns: minmax(0, 1fr) 64px 32px 42px; gap: 6px; align-items: center; }
+.fpr-crit-row label { margin: 0; line-height: 1.3; }
+.fpr-crit-row input[type="number"] { width: 100%; }
+.fpr-crit-row .fpr-unit { min-width: 0; }
+.fpr-left { text-align: right; font-weight: 600; color: var(--fpr-title); font-variant-numeric: tabular-nums; }
+.fpr-crit.off label, .fpr-crit.off .fpr-left { color: #a7b0bd; }
 .fpr-unit { color: var(--fpr-muted); font-size: 11.5px; min-width: 34px; }
-.fpr-preset { width: 100%; font-size: 12.5px; margin-bottom: 4px; }
+.fpr-more { margin-top: 8px; }
+.fpr-more > summary { list-style: none; display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 5px 0;
+  font-size: 12.5px; font-weight: 600; color: var(--fpr-accent); }
+.fpr-more > summary::-webkit-details-marker { display: none; }
+.fpr-more > summary::before { content: ''; width: 6px; height: 6px; flex: none; margin: 0 1px 0 2px;
+  border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor; transform: rotate(-45deg); transition: transform .15s; }
+.fpr-more[open] > summary::before { transform: rotate(45deg); }
+.fpr-more > summary:hover { color: var(--fpr-title); }
+.fpr-more > summary:focus-visible { outline: 2px solid var(--fpr-accent); outline-offset: 2px; border-radius: 3px; }
+.fpr-more-n { margin-left: auto; font-weight: 400; font-size: 11.5px; color: var(--fpr-warn); }
+.fpr-more-links { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0 2px; }
+.fpr-more-links .btn { font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { .fpr-more > summary::before { transition: none; } }
+/* Back and Next stay in view when the pane scrolls (the phone's bottom sheet) */
+.fpr-actions.fpr-sticky { position: sticky; bottom: 0; z-index: 2; background: #fff; border-top: 1px solid var(--rule);
+  margin: 12px -14px -16px; padding: 10px 14px 14px; border-radius: 0 0 8px 8px; }
 
-/* histograms and the funnel */
-.fpr-hist { display: block; width: 100%; height: auto; margin: 2px 0 2px; }
-.fpr-hist-cap { font-size: 11px; color: var(--fpr-muted); display: flex; justify-content: space-between; }
-.fpr-funnel-row { display: grid; grid-template-columns: 136px 1fr 52px; gap: 6px; align-items: center; margin: 3px 0; font-size: 12px; }
-.fpr-funnel-label { line-height: 1.2; color: var(--fpr-text); }
-.fpr-funnel-track { background: #edeef2; border-radius: 3px; height: 13px; overflow: hidden; }
-.fpr-funnel-fill { height: 13px; border-radius: 3px; background: #9cb3d6; }
-.fpr-funnel-row.last .fpr-funnel-fill { background: var(--fpr-hl); }
-.fpr-funnel-val { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* the histograms */
+.fpr-hist { display: block; width: 100%; height: auto; margin: 3px 0 1px; }
 
 /* the shortlist */
 .fpr-sort { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fpr-muted); margin-bottom: 6px; }
@@ -270,6 +292,14 @@ a { color: var(--fpr-accent); }
 .fpr-legend-sw.dash { height: 3px; border-radius: 0; background: repeating-linear-gradient(to right, var(--sw) 0 5px, transparent 5px 8px); }
 .fpr-legend-sw.box { height: 10px; width: 14px; border-radius: 2px; border: 1.5px solid var(--sw); background: transparent; }
 .fpr-legend-sep { border-top: 1px solid var(--rule); margin: 3px 0 1px; }
+.fpr-legend-switch { display: flex; border: 1px solid var(--card-border); border-radius: 5px; overflow: hidden; margin-bottom: 3px; }
+.fpr-legend-switch button { flex: 1; border: 0; background: #fff; color: var(--fpr-muted); font-size: 11px; padding: 3px 4px; cursor: pointer; }
+.fpr-legend-switch button + button { border-left: 1px solid var(--card-border); }
+.fpr-legend-switch button:hover:not(:disabled) { color: var(--fpr-accent); background: #f5f8fb; }
+.fpr-legend-switch button.on { background: #eef3fb; color: var(--fpr-accent); font-weight: 700; }
+.fpr-legend-switch button:disabled { cursor: default; color: #b8c0cc; }
+.fpr-legend-switch button:focus-visible { outline: 2px solid var(--fpr-accent); outline-offset: -2px; }
+.fpr-legend-key { display: flex; flex-direction: column; gap: 4px; }
 .fpr-readout { position: absolute; right: 12px; bottom: 34px; z-index: 1000; background: rgba(255, 255, 255, .92);
   border: 1px solid var(--card-border); border-radius: 5px; padding: 3px 8px; font-size: 11px; color: var(--fpr-instr);
   font-variant-numeric: tabular-nums; pointer-events: none; }
@@ -280,8 +310,10 @@ a { color: var(--fpr-accent); }
 .fpr-hover b { color: var(--fpr-title); }
 .fpr-hover .t { font-weight: 700; font-size: 12px; color: #22304d; margin-bottom: 2px; }
 .fpr-hover .f { color: var(--fpr-warn); }
-.fpr-cue-slot { position: absolute; top: 62px; left: calc(var(--pane-width) + 24px); right: 64px; z-index: 1050;
-  display: flex; justify-content: center; pointer-events: none; }
+/* centered on the window, under the step tabs (the owner, 2026-11-19), in a strip as far from the right
+   edge as the pane takes on the left; narrower windows center it beside the pane (section 9) */
+.fpr-cue-slot { position: absolute; top: 62px; left: calc(var(--pane-width) + 24px); right: calc(var(--pane-width) + 24px);
+  z-index: 1050; display: flex; justify-content: center; pointer-events: none; }
 .fpr-cue { display: inline-flex; align-items: center; gap: 7px; padding: 6px 14px; border-radius: 16px;
   background: rgba(255, 255, 255, .96); border: 1px solid var(--card-border); box-shadow: 0 1px 4px rgba(0, 0, 0, .10);
   color: var(--fpr-instr); font-size: 12.5px; line-height: 1.35; }
@@ -368,6 +400,10 @@ a { color: var(--fpr-accent); }
   .fpr-step-long { display: none; }
   .fpr-step-short { display: inline; }
 }
+/* too narrow to center the cue on the window with room for it: centered in the map beside the pane */
+@media (max-width: 1150px) {
+  .fpr-cue-slot { right: 64px; }
+}
 @media (max-width: 1080px) {
   .fpr-tagline { display: none; }
 }
@@ -382,9 +418,10 @@ a { color: var(--fpr-accent); }
   :root { --pane-width: calc(100vw - 24px); }
   .fpr-legend { width: 150px; font-size: 10px; padding: 5px 8px 6px; gap: 3px; }
   .fpr-legend-title { font-size: 10px; }
+  .fpr-legend-switch button { font-size: 10px; padding: 2px 3px; }
+  .fpr-legend-key { gap: 3px; }
   .fpr-pane { top: auto; bottom: 12px; max-height: 46vh; }
-  .fpr-map-wrap .leaflet-top.leaflet-left { left: 0; }
-  .fpr-cue-slot { left: 56px; right: 60px; }
+  .fpr-cue-slot { left: 60px; right: 60px; }
   .fpr-brand { font-size: .95rem; }
 }
 @media (max-width: 600px) {

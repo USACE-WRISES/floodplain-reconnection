@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.3.0 (2026-11-19)
+- Reaches: click reaches, or hold Shift and drag boxes, to screen known sites.
+- Draw a box is gone: a saved box opens as picked reaches.
+- A shorter Study area step, without the examples.
+- A simpler Screen step: three criteria with the reaches each one leaves.
+- A result card on top counts the candidate sites.
+- Site length, gaps and the quality filters fold away under More settings.
+- Reset to starting values replaces the starting-values menu.
+- The map's colors are switched in its legend: BHR, ER or Sites.
+- Sites colors only the candidate sites, not runs too short to be one.
+- Back and Next stay in view on small screens.
+- Reaches show only zoomed in, and a study area's from a wider view.
+- No watershed names on hover before reaches can be seen.
+- The map's hint sits centered under the step tabs.
+- The zoom buttons sit under the layers button, with the other map controls.
+
 ## v0.2.1 (2026-11-19)
 - USGS Imagery basemap works again: USGS retired its imagery-with-labels service.
 

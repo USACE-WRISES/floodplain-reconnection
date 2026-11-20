@@ -80,6 +80,10 @@ describe('downloads', () => {
     expect(readSaved(JSON.stringify({ ...base, version: 1 })).area.mode).toBe('huc')
     expect(() => readSaved(JSON.stringify({ ...base, version: 3 }))).toThrow()
     expect(() => readSaved(JSON.stringify({ ...base, version: 2, edits: [] }))).toThrow()
+    // a study area this tool does not know, or picked reaches it cannot read
+    expect(() => readSaved(JSON.stringify({ ...base, version: 2, area: { mode: 'circle', codes: [] } }))).toThrow()
+    expect(() => readSaved(JSON.stringify({ ...base, version: 2, area: { mode: 'reach', codes: [], reaches: [{ id: 5 }] } }))).toThrow()
+    expect(readSaved(JSON.stringify({ ...base, version: 2, area: { mode: 'box', codes: [], box: [-80, 39, -79, 40] } })).area.mode).toBe('box')
     const ctx = context(true)
     const saved = readSaved(JSON.stringify({ ...base, version: 2, edits: ctx.edits.toJSON() }))
     const again = new Edits()

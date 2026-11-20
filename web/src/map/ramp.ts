@@ -10,7 +10,6 @@ export const UNSAMPLED = '#c9d0d9'
 
 export const MATCH = {
   site: '#c2410c',
-  short: '#e9a23b',
   /** a dark neutral: the basemap draws its own streams in light blue */
   fail: '#5b6678',
   unmeasured: '#aeb6c2',

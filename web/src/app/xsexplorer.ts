@@ -1,7 +1,7 @@
 // The reach popup's cross-sections (the owner, 2026-11-19, after STAF's EASI card): step through the
 // sections the reach was cut from, see each one's geometry and ratios beside the reach medians, and set
 // the bankfull depth and the low-bank height by typing them or by dragging the lines. A reach the user
-// edits is screened on the edited sections (screen/edits.ts); the map, the funnel and the sites follow.
+// edits is screened on the edited sections (screen/edits.ts); the map, the counts and the sites follow.
 //
 // A section is drawn when the release stores its profile (one per stream line) or once the user pulls it
 // from USGS 3DEP with the button: never on its own (the owner's rule, 2026-10-11). Pulled profiles are

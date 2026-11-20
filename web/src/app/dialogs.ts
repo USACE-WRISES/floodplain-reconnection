@@ -34,12 +34,14 @@ export function showAbout(idx: FprIndex | null, dataVersion: string): void {
 export function showHelp(): void {
   showModal('Help', `
     <h5>1. Study area</h5>
-    <p>Pick watersheds: zoom in and click HUC12 watersheds to add or remove them, then add a whole HUC10 or HUC8 if
-    you like. Or choose <b>Upstream of a point</b> and click a stream: everything upstream becomes the study area.
-    Or draw a box with two clicks. The examples load a finished area and go on to Screen.</p>
+    <p>Choose <b>Watersheds</b> and click HUC12 watersheds to add or remove them (then add a whole HUC10 or HUC8 if
+    you like), <b>Upstream</b> and click a stream to take everything upstream of it, or <b>Reaches</b> and click the
+    reaches you want. In Reaches, hold Shift and drag to add every reach in a box, as many boxes as you like.</p>
     <h5>2. Screen</h5>
-    <p>Set the criteria. The map colors every reach, and the funnel shows how each criterion narrows the reaches.
-    The starting values are placeholders for the project team to set.</p>
+    <p>Set the drainage area, bank height ratio and entrenchment ratio a reach needs. Beside each box is the number
+    of reaches left after it, and the card on top counts the candidate sites. Empty a box to turn that criterion
+    off. <b>More settings</b> holds the site length, the gaps a site can span, the quality filters, and
+    <b>Reset to starting values</b>. The starting values are placeholders for the project team to set.</p>
     <h5>3. Shortlist</h5>
     <p>A candidate site is a run of reaches that meet the criteria along a stream's main stem. A tributary starts a
     site of its own. Rank the sites, keep or drop each one, add notes, and open a site for its reach by reach values
@@ -53,11 +55,13 @@ export function showHelp(): void {
     time. A section the grid stores is drawn at once; <b>Pull from 3DEP</b> draws any other, only when you ask. Set
     your own bankfull depth and low-bank height by dragging the lines or typing the heights; the flood-prone line
     follows bankfull. A reach you edit is screened on your edited sections (their median when several), and the map,
-    the funnel and the sites follow. <b>Reset this section</b> or <b>Clear my edits</b> returns the grid's values.</p>
+    the counts and the sites follow. <b>Reset this section</b> or <b>Clear my edits</b> returns the grid's values.</p>
     <h5>On the map</h5>
     <ul>
       <li>Zoom in past the coverage outlines to see reaches anywhere the grid is built.</li>
       <li>Point at a reach for its values. Click it for its cross-sections and details.</li>
+      <li>The legend's buttons color the reaches by bank height ratio (BHR), entrenchment ratio (ER), or the
+      candidate sites (Sites).</li>
       <li>Dashed reaches carry a caution. Gray reaches have too little data or are not sampled.</li>
     </ul>
     <p><a href="#" data-open-methods>Methods and limits</a></p>`)
@@ -97,7 +101,8 @@ export function showMethods(idx: FprIndex | null): void {
     data"), and a flood-prone width that runs off the profile or a 3 m or 10 m elevation model ("use with caution").</p>
     <h5>Sites</h5>
     <p>Reaches that meet every criterion and touch along a main stem make a candidate site. Short gaps can be
-    bridged. Site values are the medians of their reaches' values.</p>
+    bridged. A run shorter than the shortest site is not a site, and the map leaves it uncolored. Site values
+    are the medians of their reaches' values.</p>
     <h5>Coverage</h5>
     <ul>
       <li>The grid is still being built in the West. Outlines on the map show where reaches exist.</li>

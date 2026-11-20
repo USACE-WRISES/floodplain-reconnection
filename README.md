@@ -18,9 +18,9 @@ Ecosystem Management and Restoration Research Program (EMRRP), fiscal years 2027
 ## Step 1, Screen sites
 
 1. **Study area.** Pick HUC12 watersheds (and whole HUC10s or HUC8s), everything upstream of a point,
-   or a box.
+   or the reaches you pick (one by one, or with Shift and drag a box at a time).
 2. **Screen.** Every stream reach of about 1,000 ft is colored by its bank height ratio or entrenchment
-   ratio. The team sets the criteria, and a funnel shows how each criterion narrows the reaches.
+   ratio. The team sets the criteria, and each criterion shows how many reaches it leaves.
 3. **Shortlist.** Reaches that meet the criteria and touch along a main stem make candidate sites,
    ranked, kept or dropped, with notes and a stored cross-section where one exists.
 4. **Report.** The shortlist as CSV and GeoJSON, every reach as CSV, a printable summary, and a saved

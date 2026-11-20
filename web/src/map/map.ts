@@ -1,7 +1,8 @@
 // The map: STAF's basemaps and controls (apps/staf-web/src/app/map.ts: USGS Topo shown, USGS
 // Imagery, the Layers control top right, the scale bottom right), the reach canvas, the HUC8
 // coverage outlines (where the reach layer is built), the HUC12 outlines a study area is picked
-// from, and the legend under the Layers control.
+// from, and the legend under the Layers control. The zoom buttons sit between the two, with the other
+// map controls (the owner, 2026-11-19; STAF keeps them top left, beside its pane).
 import L from 'leaflet'
 
 const USGS_TOPO_URL = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}'
@@ -39,7 +40,6 @@ export function makeMap(box: HTMLElement): AppMap {
     center: [START.lat, START.lon], zoom: START.zoom, maxZoom: 19, minZoom: 3, zoomControl: false,
     attributionControl: false, zoomSnap: 1, inertiaDeceleration: 3000, inertiaMaxSpeed: 1500,
   })
-  L.control.zoom({ position: 'topleft', zoomInText: '+', zoomOutText: '-' }).addTo(map)
   L.control.attribution({ position: 'bottomright', prefix: 'Leaflet' }).addTo(map)
   const imagery = usgs(USGS_IMAGERY_URL, USGS_IMAGERY_ATTR)
   const topo = usgs(USGS_TOPO_URL)
@@ -52,6 +52,8 @@ export function makeMap(box: HTMLElement): AppMap {
   const picks = L.layerGroup().addTo(map)
   const layers = L.control.layers({ 'USGS Topo': topo, 'USGS Imagery': imagery },
     { 'Where reaches are built': coverage, 'Watersheds (HUC12)': picks }, { position: 'topright' }).addTo(map)
+  // under the Layers control and over the legend (a top corner stacks its controls as they are added)
+  L.control.zoom({ position: 'topright', zoomInText: '+', zoomOutText: '-' }).addTo(map)
   L.control.scale({ position: 'bottomright', metric: true, imperial: true }).addTo(map)
   const Legend = L.Control.extend({
     onAdd() {
