@@ -12,6 +12,7 @@
 - Sites draws candidate sites in orange and every other reach in one gray.
 - One gray for reaches with no data, and a Color by label on the legend.
 - Reaches stand out more: a white edge, and wider lines zoomed in.
+- A cleaner reach popup: the cross-section and its details in two tabs.
 - Back and Next stay in view on small screens.
 - Reaches show only zoomed in, and a study area's from a wider view.
 - No watershed names on hover before reaches can be seen.

@@ -1435,28 +1435,79 @@ export class App {
 
   // ---------------------------------------------------------------- details
 
+  /** The reach popup (the owner, 2026-11-20: cleaner, in two tabs): a summary, then the Cross-section
+   * tab (xsexplorer.ts) and the Details tab (every section, the shown section's geometry, the reach's
+   * facts). A line the grid did not sample has no cross-sections: its summary and facts, with no tabs. */
   showReach(ref: Ref): void {
     const f = this.net.file(ref)
     const r = rowOf(ref)
     let explorer: ReachExplorer | null = null
+    const xs = f.q[r] !== Q_UNSAMPLED && f.n[r] > 0
     const body = showModal(f.name[r] || 'Unnamed stream', `
-      <div data-reach-head></div>
-      <div data-reach-xs></div>
-      <div data-reach-facts></div>`, { size: 'xl', onClose: () => explorer?.close() })
-    const head = body.querySelector<HTMLElement>('[data-reach-head]')!
+      <div class="fpr-reach-sum" data-reach-sum></div>
+      ${xs ? `<div class="fpr-seg fpr-reach-tabs" role="tablist" aria-label="Reach">
+        <button type="button" role="tab" data-reach-tab="xs" class="on" aria-selected="true">Cross-section</button>
+        <button type="button" role="tab" data-reach-tab="details" aria-selected="false" tabindex="-1">Details</button>
+      </div>
+      <div role="tabpanel" data-reach-panel="xs"></div>` : ''}
+      <div role="tabpanel" data-reach-panel="details"${xs ? ' hidden' : ''}>
+        <div data-reach-sections></div>
+        <div data-reach-facts></div>
+      </div>`, { size: 'xl', onClose: () => explorer?.close() })
+    const sum = body.querySelector<HTMLElement>('[data-reach-sum]')!
     const facts = body.querySelector<HTMLElement>('[data-reach-facts]')!
     const fill = () => {
-      head.innerHTML = this.reachHead(f, r, ref)
+      sum.innerHTML = this.reachSummary(f, r, ref)
       facts.innerHTML = this.reachFacts(f, r)
     }
     fill()
-    head.addEventListener('click', (e) => {
-      const a = (e.target as HTMLElement).closest<HTMLElement>('[data-site]')
-      if (!a) return
-      e.preventDefault()
-      closeModal()
-      this.showSite(a.dataset.site!)
+    const tab = (which: string) => {
+      body.querySelectorAll<HTMLElement>('[data-reach-tab]').forEach((b) => {
+        const on = b.dataset.reachTab === which
+        b.classList.toggle('on', on)
+        b.setAttribute('aria-selected', String(on))
+        b.tabIndex = on ? 0 : -1
+      })
+      body.querySelectorAll<HTMLElement>('[data-reach-panel]').forEach((p) => {
+        p.hidden = p.dataset.reachPanel !== which
+      })
+    }
+    body.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement
+      const site = t.closest<HTMLElement>('[data-site]')
+      if (site) {
+        e.preventDefault()
+        closeModal()
+        this.showSite(site.dataset.site!)
+        return
+      }
+      const b = t.closest<HTMLElement>('[data-reach-tab]')
+      if (b) {
+        tab(b.dataset.reachTab!)
+        return
+      }
+      // a station in the Details tab's table: that section, in the Cross-section tab
+      const go = t.closest<HTMLElement>('[data-reach-sections] [data-xsx-go]')
+      if (go && explorer) {
+        explorer.show(Number(go.dataset.xsxGo))
+        tab('xs')
+        return
+      }
+      if (t.closest('[data-reach-clear]')) {
+        e.preventDefault()
+        explorer?.clearReach()
+      }
     })
+    // the two tabs are one stop for the Tab key: the arrow keys switch them
+    body.querySelector<HTMLElement>('.fpr-reach-tabs')?.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+      const next = body.querySelector<HTMLElement>('[data-reach-tab]:not(.on)')
+      if (!next) return
+      e.preventDefault()
+      tab(next.dataset.reachTab!)
+      next.focus()
+    })
+    if (!xs) return
     explorer = new ReachExplorer({
       staf: this.staf,
       edits: this.edits,
@@ -1465,17 +1516,22 @@ export class App {
         this.recompute()
         fill()
       },
-    }, f, r, body.querySelector<HTMLElement>('[data-reach-xs]')!)
+    }, f, r, body.querySelector<HTMLElement>('[data-reach-panel="xs"]')!, body.querySelector<HTMLElement>('[data-reach-sections]')!)
     void explorer.start()
   }
 
-  /** The reach popup's first lines: where it is, and its site. */
-  private reachHead(f: UnitFile, r: number, ref: Ref): string {
+  /** The reach popup's summary: the values it is screened on, its site, and the user's edits. */
+  private reachSummary(f: UnitFile, r: number, ref: Ref): string {
+    const q = f.q[r]
     const site = this.siteOf.get(ref)
-    return `<p class="fpr-note" style="margin-top:0">Reach ${esc(reachId(f, r))} · HUC12 ${esc(huc12Text(f, r) || 'n/a')} · region ${esc(f.vpu[r])}
-      · ${ft(f.lenM[r])} ft long, drains ${sqmi(f.da[r])} sq mi</p>
-      ${site !== undefined ? `<p>Part of candidate site <b>#${site + 1}</b>${this.isGap(ref) ? ', as a gap' : ''}. <a href="#" data-site="${esc(this.ranked[site].id)}">Open the site</a></p>`
-        : this.inShortRun(ref) ? `<p>${esc(this.shortRunText())}, so it is not a candidate site.</p>` : ''}`
+    const vals = q >= Q_NODATA ? `<span>${esc(QUALITY_LABEL[q])}</span>`
+      : `<span><abbr title="Bank height ratio">BHR</abbr> <b>${esc(bhrText(f, r))}</b></span>
+        <span><abbr title="Entrenchment ratio">ER</abbr> <b>${ratio(f.er[r] / 100)}</b></span>
+        ${q === Q_CAUTION ? '<span class="f">Use with caution</span>' : ''}`
+    return `<div class="fpr-reach-vals">${vals}<span>Drains <b>${sqmi(f.da[r])} sq mi</b></span><span><b>${ft(f.lenM[r])} ft</b> long</span></div>
+      ${site !== undefined ? `<p>In candidate site <b>#${site + 1}</b>${this.isGap(ref) ? ', as a gap' : ''}. <a href="#" data-site="${esc(this.ranked[site].id)}">Open the site</a></p>`
+        : this.inShortRun(ref) ? `<p>${esc(this.shortRunText())}, so it is not a candidate site.</p>` : ''}
+      ${f.edited[r] ? `<p>Screened on your edits (${f.edited[r]} of ${f.n[r]} sections). <a href="#" data-reach-clear>Clear my edits</a></p>` : ''}`
   }
 
   /** The reach popup's facts: the values it is screened on (the user's where edited) and the notes. */
@@ -1500,7 +1556,8 @@ export class App {
         ${row('Slope', esc(slopeText(f.slope[r])))}
         ${q === Q_UNSAMPLED ? '' : row('Cross-sections', `${f.nOk[r]} of ${f.n[r]} measured by the grid${f.res[r] ? `, ${f.res[r]} m elevation model` : ''}`)}
       </tbody></table>
-      ${notes.length ? `<h5>Notes</h5><ul>${notes.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}`
+      ${notes.length ? `<h5 class="fpr-xsx-h">Notes</h5><ul class="fpr-reach-notes">${notes.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+      <p class="fpr-note">Reach ${esc(reachId(f, r))} · HUC12 ${esc(huc12Text(f, r) || 'n/a')} · region ${esc(f.vpu[r])}</p>`
   }
 
   private async fillProfile(slot: Element | null, f: UnitFile, r: number): Promise<void> {

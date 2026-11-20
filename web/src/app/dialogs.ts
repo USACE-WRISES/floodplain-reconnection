@@ -51,11 +51,10 @@ export function showHelp(): void {
     the study area as CSV, or a printable summary. <b>Save</b> writes your study area, criteria, decisions and
     cross-section edits to a file that <b>Open</b> reads back.</p>
     <h5>A reach's cross-sections</h5>
-    <p>Click a reach for its cross-sections: each section's geometry and ratios beside the reach medians, one at a
-    time. A section the grid stores is drawn at once; <b>Pull from 3DEP</b> draws any other, only when you ask. Set
-    your own bankfull depth and low-bank height by dragging the lines or typing the heights; the flood-prone line
-    follows bankfull. A reach you edit is screened on your edited sections (their median when several), and the map,
-    the counts and the sites follow. <b>Reset this section</b> or <b>Clear my edits</b> returns the grid's values.</p>
+    <p>Click a reach to open it, and pick a section with the numbered buttons. A section the grid stores is drawn at
+    once; <b>Pull from 3DEP</b> draws any other. Drag the bankfull or low-bank line, or type the heights, to set your
+    own: the reach is then screened on your edited sections, and the map and the sites follow. <b>Details</b> lists
+    every section's ratios and the reach's values.</p>
     <h5>On the map</h5>
     <ul>
       <li>Zoom in past the coverage outlines to see reaches anywhere the grid is built.</li>

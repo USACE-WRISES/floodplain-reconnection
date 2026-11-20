@@ -1,7 +1,11 @@
-// The reach popup's cross-sections (the owner, 2026-11-19, after STAF's EASI card): step through the
-// sections the reach was cut from, see each one's geometry and ratios beside the reach medians, and set
-// the bankfull depth and the low-bank height by typing them or by dragging the lines. A reach the user
-// edits is screened on the edited sections (screen/edits.ts); the map, the counts and the sites follow.
+// The reach popup's cross-sections (the owner, 2026-11-19, after STAF's EASI card): pick a section the
+// reach was cut from, see its chart and numbers, and set the bankfull depth and the low-bank height by
+// typing them or by dragging the lines. A reach the user edits is screened on the edited sections
+// (screen/edits.ts); the map, the counts and the sites follow.
+//
+// Two places (the owner, 2026-11-20: a cleaner popup, in two tabs): the Cross-section tab (the numbered
+// section buttons, the chart, the section's numbers and heights) and a slot in the Details tab (every
+// section's ratios, and the shown section's geometry).
 //
 // A section is drawn when the release stores its profile (one per stream line) or once the user pulls it
 // from USGS 3DEP with the button: never on its own (the owner's rule, 2026-10-11). Pulled profiles are
@@ -43,6 +47,9 @@ const row = (k: string, v: string): string => `<tr><th>${esc(k)}</th><td>${v}</t
 const r2 = (x100: number | null): string => (x100 === null || !Number.isFinite(x100) ? 'n/a' : ratio(x100 / 100))
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 const busy = (text: string): string => `<div class="fpr-busy"><span class="fpr-spinner"></span>${esc(text)}</div>`
+/** A section's two ratios in words ("at least" where the method caps BHR or the profile runs out). */
+const ratios = (m: { er: number | null, bhr: number | null, edge?: boolean, capped?: boolean }): string =>
+  `BHR ${m.capped ? 'at least ' : ''}${r2(m.bhr)}, ER ${m.edge ? 'at least ' : ''}${r2(m.er)}`
 const near = (a: number, b: number): boolean => Math.abs(a - b) * FT_PER_M < 0.005
 
 /** A section's grid numbers as Measured (bfArea from its profile when drawn). */
@@ -66,7 +73,8 @@ export class ReachExplorer {
   private chart: XsChart | null = null
   private closed = false
 
-  constructor(private readonly host: ExplorerHost, private readonly f: UnitFile, private readonly r: number, private readonly root: HTMLElement) {}
+  constructor(private readonly host: ExplorerHost, private readonly f: UnitFile, private readonly r: number,
+    private readonly root: HTMLElement, private readonly details: HTMLElement) {}
 
   async start(): Promise<void> {
     const { f, r } = this
@@ -109,41 +117,42 @@ export class ReachExplorer {
     return this.root.querySelector<T>(sel)!
   }
 
+  /** In the Details tab's slot. */
+  private qd<T extends Element>(sel: string): T {
+    return this.details.querySelector<T>(sel)!
+  }
+
   private layout(): void {
+    const n = this.sections.length
     this.root.innerHTML = `
-      <div class="fpr-xsx">
-        <div class="fpr-xsx-card">
-          <h5>Cross-section geometry</h5>
-          <table class="fpr-tbl fpr-xsx-geom"><tbody data-xsx-geom></tbody></table>
-          <div class="fpr-xsx-inputs">
-            <label>Bankfull depth<span class="fpr-xsx-in"><input type="number" class="form-control form-control-sm" data-xsx-in="bf" step="0.01" min="0.05" inputmode="decimal" aria-label="Bankfull depth, feet"> ft</span></label>
-            <label>Low-bank height<span class="fpr-xsx-in"><input type="number" class="form-control form-control-sm" data-xsx-in="lb" step="0.01" min="0.05" inputmode="decimal" aria-label="Low-bank height above the bed, feet"> ft</span></label>
-          </div>
-          <div class="fpr-xsx-btns">
-            <button type="button" class="btn btn-outline-secondary btn-sm" data-xsx="reset">Reset this section</button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" data-xsx="clear">Clear my edits</button>
-          </div>
-          <p class="fpr-note" data-xsx-state></p>
-        </div>
-        <div class="fpr-xsx-plot">
-          <div class="fpr-xsx-step">
-            <button type="button" class="btn btn-outline-secondary btn-sm" data-xsx="prev" aria-label="Previous cross-section">&#9664;</button>
-            <span data-xsx-label></span>
-            <button type="button" class="btn btn-outline-secondary btn-sm" data-xsx="next" aria-label="Next cross-section">&#9654;</button>
-          </div>
+      <div class="fpr-xsx-pick" role="group" aria-label="Cross-sections" data-xsx-pick>
+        <span class="fpr-xsx-pick-l" aria-hidden="true">Section</span>
+        ${this.sections.map((_, j) => `<button type="button" data-xsx-go="${j}">${j + 1}</button>`).join('')}
+      </div>
+      <div class="fpr-xsx-where" data-xsx-label></div>
+      <div class="fpr-xsx-main">
+        <div>
           <div class="fpr-xsx-chart" data-xsx-chart></div>
           <div class="fpr-xs-cap" data-xsx-cap></div>
         </div>
-      </div>
-      <h5 class="fpr-xsx-h">Reach cross-sections</h5>
+        <div class="fpr-xsx-side">
+          <div class="fpr-xsx-side-h">This section</div>
+          <div class="fpr-xsx-nums" data-xsx-nums></div>
+          <div class="fpr-xsx-edit">
+            <label>Bankfull depth<span class="fpr-xsx-in"><input type="number" class="form-control form-control-sm" data-xsx-in="bf" step="0.01" min="0.05" inputmode="decimal" aria-label="Bankfull depth, feet"> ft</span></label>
+            <label>Low-bank height<span class="fpr-xsx-in"><input type="number" class="form-control form-control-sm" data-xsx-in="lb" step="0.01" min="0.05" inputmode="decimal" aria-label="Low-bank height above the bed, feet"> ft</span></label>
+          </div>
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-xsx="reset">Reset section</button>
+          <p class="fpr-note fpr-xsx-state" data-xsx-state></p>
+        </div>
+      </div>`
+    this.details.innerHTML = `
+      <h5 class="fpr-xsx-h">Every section</h5>
       <div class="fpr-tbl-wrap"><table class="fpr-tbl fpr-xsx-sections" data-xsx-table></table></div>
-      <p class="fpr-note">Stations from the upstream end of the reach; a dot marks a profile the grid stores. The grid screens a reach on its
-        sections' medians, and the default section is the one nearest both medians. &ge;2.00: the grid found no bank below the flood-prone
-        stage, so its low bank stops at twice the bankfull depth. &dagger;: the flood-prone width reaches the end of the profile, so the
-        entrenchment ratio is at least the value shown.</p>
-      <p class="fpr-note">Drag the bankfull or low-bank line (or move it with the arrow keys), or type the heights. The flood-prone line follows
-        bankfull: the bed plus twice the bankfull depth. Your heights are not capped. A reach you edit is screened on your edited sections only,
-        their median when you edit several.</p>`
+      <p class="fpr-note">Click a station to see it. A dot marks the profile the grid stores. &ge;2.00: no bank below twice the bankfull
+        depth. &dagger;: the flood-prone width runs off the profile, so the entrenchment ratio is at least the value shown.</p>
+      <h5 class="fpr-xsx-h" data-xsx-geom-h></h5>
+      <table class="fpr-tbl fpr-xsx-geom"><tbody data-xsx-geom></tbody></table>`
     this.chart = new XsChart(this.q<HTMLElement>('[data-xsx-chart]'), {
       onInput: (h) => {
         this.h = h
@@ -158,17 +167,22 @@ export class ReachExplorer {
     this.root.addEventListener('click', (e) => {
       const t = (e.target as HTMLElement).closest<HTMLElement>('[data-xsx], [data-xsx-go]')
       if (!t || !this.root.contains(t)) return
-      const n = this.sections.length
       if (t.dataset.xsxGo !== undefined) {
         this.go(Number(t.dataset.xsxGo))
         return
       }
       const a = t.dataset.xsx
-      if (a === 'prev') this.go((this.i - 1 + n) % n)
-      else if (a === 'next') this.go((this.i + 1) % n)
-      else if (a === 'reset') this.reset()
-      else if (a === 'clear') this.clearReach()
+      if (a === 'reset') this.reset()
       else if (a === 'pull') void this.pull()
+    })
+    // the section buttons are one stop for the Tab key: the arrow keys (Home, End) step through them
+    this.q<HTMLElement>('[data-xsx-pick]').addEventListener('keydown', (e) => {
+      const to = e.key === 'ArrowLeft' ? (this.i - 1 + n) % n : e.key === 'ArrowRight' ? (this.i + 1) % n
+        : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1
+      if (to < 0) return
+      e.preventDefault()
+      this.go(to)
+      this.q<HTMLElement>(`[data-xsx-go="${to}"]`).focus()
     })
     for (const which of ['bf', 'lb'] as const) {
       const input = this.q<HTMLInputElement>(`[data-xsx-in="${which}"]`)
@@ -188,6 +202,11 @@ export class ReachExplorer {
 
   private stationFt(s: ReachSection): number {
     return Math.round((s.at * this.f.lenM[this.r] * FT_PER_M) / 10) * 10
+  }
+
+  /** Shows section i (the Details tab's stations table picks one this way). */
+  show(i: number): void {
+    if (this.chart && i >= 0 && i < this.sections.length) this.go(i)
   }
 
   private go(i: number): void {
@@ -281,38 +300,61 @@ export class ReachExplorer {
         ${pull ? '<button type="button" class="btn btn-outline-primary btn-sm" data-xsx="pull">Try again</button>' : ''}</div>`
     }
     if (!pull) return '<div class="fpr-xsx-empty">The grid recorded no elevation tiles for this section, so it cannot be pulled.</div>'
-    return `<div class="fpr-xsx-empty"><p>The grid keeps one profile per stream line, and this section's was not kept. Pull it from USGS 3DEP to
-      draw it and set your own heights. It takes a few seconds, and happens only when you ask.</p>
+    return `<div class="fpr-xsx-empty"><p>The grid stores one profile per stream line, and not this section's. Pull it from USGS 3DEP
+      to draw it and set your own heights. It takes a few seconds.</p>
       <button type="button" class="btn btn-primary btn-sm" data-xsx="pull">Pull from 3DEP</button></div>`
   }
 
-  /** The numbers, the inputs, the label and the table (not the chart): cheap enough for every move. */
+  /** The buttons, the lines, the numbers, the inputs and the Details tab's tables (not the chart): cheap
+   * enough for every move. */
   private renderInfo(): void {
     if (this.closed) return
-    const { f, r } = this
     const { s, g, e } = this.now()
-    const n = this.sections.length
     const cur = this.current()
     const m = cur.m
     const det = s.det
-    const gv = this.host.edits.grid(f, r)
-    const atCap = (gv.why & WHY.atCap) !== 0
     const ready = g?.kind === 'ready'
-    const tags = [this.i === this.def ? 'default' : '', s.stored ? 'stored' : '', e ? 'edited' : ''].filter(Boolean)
-    this.q<HTMLElement>('[data-xsx-label]').textContent = `${this.stationFt(s).toLocaleString('en-US')} ft${tags.length ? ` · ${tags.join(', ')}` : ''} (${this.i + 1} of ${n})`
+    const mine = Boolean(e) || cur.mine
+    const station = (x: ReachSection) => `${this.stationFt(x).toLocaleString('en-US')} ft`
+    // the section buttons: the one shown, the edited ones, the stored profile, the unmeasured
+    this.root.querySelectorAll<HTMLButtonElement>('[data-xsx-pick] [data-xsx-go]').forEach((b) => {
+      const j = Number(b.dataset.xsxGo)
+      const sj = this.sections[j]
+      const ej = this.editOf(sj)
+      const on = j === this.i
+      const yours = Boolean(ej) || (on && cur.mine)
+      const v = on && cur.mine && cur.m ? cur.m : ej ?? (scored(sj) ? gridMeasured(sj, null) : null)
+      b.classList.toggle('on', on)
+      b.classList.toggle('edited', yours)
+      b.classList.toggle('stored', sj.stored)
+      b.classList.toggle('muted', !v)
+      b.setAttribute('aria-pressed', String(on))
+      b.tabIndex = on ? 0 : -1
+      const label = `Section ${j + 1}, ${station(sj)}: ${v ? ratios(v) : 'not measured'}${yours ? ', your heights' : ''}${sj.stored ? ', stored profile' : ''}`
+      b.title = label
+      b.setAttribute('aria-label', label)
+    })
+    const tags = [this.i === this.def ? 'nearest the reach medians' : '', s.stored ? 'stored profile' : '', mine ? 'your heights' : '']
+    this.q<HTMLElement>('[data-xsx-label]').textContent = [`${station(s)} from the upstream end`, ...tags.filter(Boolean)].join(' · ')
     const ftOf = (v: number | null, k: number) => (v === null ? 'n/a' : `${((v / k) * FT_PER_M).toFixed(1)} ft`)
     const sqft = (m2: number | null | undefined) => (m2 === null || m2 === undefined ? 'n/a' : `${(m2 * SQFT_PER_SQM).toFixed(1)} sq ft`)
-    this.q<HTMLElement>('[data-xsx-geom]').innerHTML = [
+    const num = (k: string, v: string) => `<span>${k}</span><b>${v}</b>`
+    this.q<HTMLElement>('[data-xsx-nums]').innerHTML = m ? [
+      num('<abbr title="Bank height ratio">BHR</abbr>', `${m.capped ? 'at least ' : ''}${r2(m.bhr)}`),
+      num('<abbr title="Entrenchment ratio">ER</abbr>', `${m.edge ? 'at least ' : ''}${r2(m.er)}`),
+      num('Bankfull', `${ftOf(m.bfd, 100)} deep, ${ftOf(m.bfw, 10)} wide`),
+      num('Flood-prone', `${ftOf(m.fpw, 10)} wide`),
+    ].join('') : '<span>Not measured</span>'
+    // the Details tab: the shown section's geometry
+    this.qd<HTMLElement>('[data-xsx-geom-h]').textContent = `Section ${this.i + 1}, ${station(s)}${mine ? ', your heights' : ''}`
+    this.qd<HTMLElement>('[data-xsx-geom]').innerHTML = [
       row('Bieger region', esc(det?.division ?? 'n/a')),
       row('Bieger cross-section area', sqft(det?.rcArea)),
+      row('Bankfull depth', ftOf(m?.bfd ?? null, 100)),
       row('Bankfull width', ftOf(m?.bfw ?? null, 10)),
       row('Bankfull cross-section area', sqft(m?.bfArea)),
       row('Flood-prone width', `${ftOf(m?.fpw ?? null, 10)}${m?.edge ? ' &dagger;' : ''}`),
-      row(cur.mine ? 'Section ER (yours)' : 'Section ER', m ? `${r2(m.er)}${m.edge ? ' &dagger;' : ''}` : 'n/a'),
-      row(cur.mine ? 'Section BHR (yours)' : 'Section BHR', m ? `${m.capped ? '&ge;' : ''}${r2(m.bhr)}` : 'n/a'),
-      row('Reach median ER', `${r2(gv.er)} <span class="fpr-note">(${r2(gv.erLo)} to ${r2(gv.erHi)}, ${f.nOk[r]} sections)</span>`),
-      row('Reach median BHR', `${atCap ? '&ge;' : ''}${r2(gv.bhr)} <span class="fpr-note">(${r2(gv.bhrLo)} to ${r2(gv.bhrHi)}, ${f.nOk[r]} sections)</span>`),
-      f.edited[r] ? row('Screened on your edits', `BHR ${r2(f.bhr[r])}, ER ${r2(f.er[r])} <span class="fpr-note">(${f.edited[r]} of ${f.n[r]} sections)</span>`) : '',
+      row('Low-bank height', ftOf(m?.lbh ?? null, 100)),
     ].join('')
     // the inputs: the heights now (the one being typed in is left alone)
     const heights: Heights | null = ready && this.h ? this.h : e ? { bf: e.bfM, lb: e.lbM }
@@ -323,12 +365,11 @@ export class ReachExplorer {
       if (document.activeElement !== input) input.value = heights ? (heights[which] * FT_PER_M).toFixed(2) : ''
     }
     this.q<HTMLButtonElement>('[data-xsx="reset"]').disabled = this.viewOnly || !(e || (ready && cur.mine))
-    this.q<HTMLButtonElement>('[data-xsx="clear"]').disabled = this.viewOnly || !this.host.edits.of(f, r)
     const res = s.num.res ? `${s.num.res} m` : ''
     this.q<HTMLElement>('[data-xsx-cap]').textContent = g?.kind !== 'ready' ? ''
-      : g.source === 'stored' ? `The profile the grid stores for this stream line (USGS 3DEP ${res}), as the grid measured it. Heights above the bed.`
-        : g.verified ? `Pulled from USGS 3DEP (${res}): the grid's own samples. Heights above the bed.`
-          : `Pulled from USGS 3DEP (${res}). Its checksum did not match the grid's, so the numbers at the grid's heights may differ slightly from the grid's own.`
+      : g.source === 'stored' ? `The grid's stored profile, USGS 3DEP ${res}. Heights above the bed.`
+        : g.verified ? `Pulled from USGS 3DEP ${res}. Heights above the bed.`
+          : `Pulled from USGS 3DEP ${res}. It may differ slightly from the grid's own samples.`
     this.q<HTMLElement>('[data-xsx-state]').textContent = this.viewOnly
       ? "View only: the data host's copy of these cross-sections differs from the one this reach was built from, so they can't be edited."
       : ready ? (cur.mine ? 'Your heights. This reach is screened on your edited sections.' : "The grid's heights. Drag a line or type a height to set your own.")
@@ -353,7 +394,7 @@ export class ReachExplorer {
       const dag = key === 'er' && s.num.flags & 2 ? '&dagger;' : ''
       return `<td class="num${on}">${mark}${r2(Math.round(v * 100))}${dag}</td>`
     }).join('')
-    this.q<HTMLElement>('[data-xsx-table]').innerHTML = `<thead><tr><th>Section</th>${this.sections.map((s, j) =>
+    this.qd<HTMLElement>('[data-xsx-table]').innerHTML = `<thead><tr><th>Station</th>${this.sections.map((s, j) =>
       `<th class="num${j === this.i ? ' on' : ''}" data-xsx-go="${j}" title="Show this cross-section">${this.stationFt(s).toLocaleString('en-US')} ft${s.stored ? ' <span class="fpr-xsx-dot" aria-label="stored profile">&bull;</span>' : ''}</th>`).join('')}
       <th class="num">Reach median</th>${edited ? '<th class="num">Screened on</th>' : ''}</tr></thead>
       <tbody>
@@ -416,7 +457,8 @@ export class ReachExplorer {
     this.renderInfo()
   }
 
-  private clearReach(): void {
+  /** Clears the user's edits on the whole reach (the popup's summary has the link). */
+  clearReach(): void {
     if (!this.host.edits.of(this.f, this.r)) return
     if (!window.confirm("Clear your cross-section edits on this reach? It goes back to the grid's values.")) return
     this.pending = false

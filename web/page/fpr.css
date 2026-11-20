@@ -362,22 +362,53 @@ a { color: var(--fpr-accent); }
 .fpr-xs { width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 6px; background: #fff; }
 .fpr-xs-cap { font-size: 11.5px; color: var(--fpr-muted); margin-top: 4px; }
 
-/* the reach popup's cross-sections (app/xsexplorer.ts, app/xschart.ts) */
-.fpr-xsx { display: grid; grid-template-columns: minmax(250px, 310px) minmax(0, 1fr); gap: 16px; align-items: start; margin-bottom: 6px; }
-.fpr-xsx-card { background: #f7f9fc; border: 1px solid var(--card-border); border-radius: 8px; padding: 10px 12px; }
-.fpr-xsx-card h5, .fpr-xsx-h { font-size: .95rem; margin: 0 0 6px; color: var(--fpr-title); }
-.fpr-xsx-h { margin-top: 12px; }
-.fpr-xsx-geom th { background: transparent; border-bottom: 1px solid var(--rule); font-weight: 600; white-space: normal; }
-.fpr-xsx-geom td { text-align: right; font-variant-numeric: tabular-nums; }
-.fpr-xsx-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
-.fpr-xsx-inputs label { font-size: 12px; font-weight: 600; color: var(--fpr-instr); margin: 0; }
+/* the reach popup (the owner, 2026-11-20: a summary, then the Cross-section and Details tabs; app/app.ts
+   showReach, app/xsexplorer.ts, app/xschart.ts) */
+.fpr-reach-sum { margin-bottom: 12px; }
+.fpr-reach-sum p { margin: 5px 0 0; font-size: 13px; color: var(--fpr-instr); }
+.fpr-reach-vals { display: flex; flex-wrap: wrap; gap: 4px 20px; font-size: 14px; color: var(--fpr-instr); }
+.fpr-reach-vals b { color: var(--fpr-title); font-variant-numeric: tabular-nums; }
+.fpr-reach-vals .f { color: var(--fpr-warn); }
+.fpr-reach-sum abbr, .fpr-xsx-nums abbr { text-decoration: none; cursor: help; }
+.fpr-reach-tabs { max-width: 300px; margin-bottom: 14px; }
+.fpr-reach-notes { padding-left: 18px; font-size: 13px; }
+.fpr-xsx-h { font-size: .95rem; margin: 14px 0 6px; color: var(--fpr-title); }
+[data-reach-panel] > div > .fpr-xsx-h:first-child { margin-top: 0; }
+.fpr-xsx-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.fpr-xsx-pick-l { font-size: 12px; font-weight: 600; color: var(--fpr-instr); margin-right: 4px; }
+.fpr-xsx-pick button { position: relative; min-width: 28px; height: 26px; padding: 0 6px; border: 1px solid var(--card-border);
+  border-radius: 5px; background: #fff; color: var(--fpr-instr); font-size: 12px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.fpr-xsx-pick button:hover { border-color: var(--fpr-accent); color: var(--fpr-accent); }
+.fpr-xsx-pick button.muted { color: #a7b0bd; }
+.fpr-xsx-pick button.edited { border-color: #c2410c; color: #9a3412; font-weight: 600; }
+.fpr-xsx-pick button.on { background: var(--fpr-accent); border-color: var(--fpr-accent); color: #fff; font-weight: 700; }
+.fpr-xsx-pick button.edited.on { background: #c2410c; border-color: #c2410c; }
+.fpr-xsx-pick button.stored::after { content: ''; position: absolute; top: 2px; right: 2px; width: 5px; height: 5px; border-radius: 50%;
+  background: #2f855a; }
+.fpr-xsx-pick button:focus-visible { outline: 2px solid var(--fpr-accent); outline-offset: 1px; }
+.fpr-xsx-where { font-size: 12.5px; color: var(--fpr-muted); margin: 6px 0 8px; }
+.fpr-xsx-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px 22px; align-items: start; }
+@media (min-width: 992px) { .fpr-xsx-main { grid-template-columns: minmax(0, 1fr) 250px; } }
+/* the Cross-section tab fits a window 900 px tall: the chart keeps its shape, centered in its box */
+.fpr-xsx-chart .fpr-xs { max-height: min(420px, 38vh); }
+/* a phone: the ten section buttons in one row */
+@media (max-width: 575px) {
+  .fpr-xsx-pick { gap: 3px; }
+  .fpr-xsx-pick-l { display: none; }
+  .fpr-xsx-pick button { min-width: 24px; padding: 0 4px; }
+}
+.fpr-xsx-side-h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--fpr-accent); margin-bottom: 6px; }
+.fpr-xsx-nums { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 13px; color: var(--fpr-instr); }
+.fpr-xsx-nums b { color: var(--fpr-title); font-variant-numeric: tabular-nums; }
+.fpr-xsx-edit { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0 8px; }
+.fpr-xsx-edit label { font-size: 12px; font-weight: 600; color: var(--fpr-instr); margin: 0; }
+.fpr-xsx-side .btn { font-size: 12px; }
 .fpr-xsx-in { display: flex; align-items: center; gap: 4px; font-weight: 400; color: var(--fpr-muted); margin-top: 3px; }
 .fpr-xsx-in input { font-size: 13px; padding: 3px 6px; text-align: right; }
-.fpr-xsx-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.fpr-xsx-btns .btn { flex: 1; font-size: 12px; white-space: nowrap; }
-.fpr-xsx-step { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12.5px;
-  color: var(--fpr-instr); font-variant-numeric: tabular-nums; }
-.fpr-xsx-step .btn { padding: 1px 8px; font-size: 11px; line-height: 1.6; }
+.fpr-xsx-state { margin: 8px 0 0; }
+.fpr-xsx-geom { max-width: 460px; }
+.fpr-xsx-geom th { background: transparent; border-bottom: 1px solid var(--rule); font-weight: 600; white-space: normal; }
+.fpr-xsx-geom td { text-align: right; font-variant-numeric: tabular-nums; }
 .fpr-xsx-svg.editable { touch-action: none; user-select: none; -webkit-user-select: none; }
 .fpr-xsx-svg .fpr-xsx-hit, .fpr-xsx-svg .fpr-xsx-grip { cursor: ns-resize; }
 .fpr-xsx-svg.dragging, .fpr-xsx-svg.dragging * { cursor: ns-resize; }
@@ -392,9 +423,6 @@ a { color: var(--fpr-accent); }
 .fpr-xsx-sections td.edited, .fpr-xsx-sections td.live { color: #9a3412; font-weight: 600; }
 .fpr-xsx-sections td.muted { color: #a7b0bd; }
 .fpr-xsx-dot { color: #2f855a; }
-@media (max-width: 820px) {
-  .fpr-xsx { grid-template-columns: minmax(0, 1fr); }
-}
 
 /* ============ 9. narrow screens ============ */
 @media (max-width: 1240px) {
